@@ -299,6 +299,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <div class="tbl-wrap" style="margin-top:14px"><table id="tblPresupOps"></table></div>
     </section>
 
+    <div class="section-title"><h2>Monto por grupo (User Team)</h2><span>detalle de costos</span></div>
+    <section class="card">
+      <h3>Facturado (MXN) por User Team</h3>
+      <div class="csub">Monto que corresponde a cada grupo.</div>
+      <div class="chart-host" id="chTeams"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblTeams"></table></div>
+    </section>
+
     <div class="section-title"><h2>Análisis detallado</h2><span>todos los usuarios y campos calculados</span></div>
     <section>
       <div class="tbl-tools">
@@ -309,14 +317,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <span class="muted" id="detCount"></span>
       </div>
       <div class="tbl-wrap"><table id="tblDet"></table></div>
-    </section>
-
-    <div class="section-title"><h2>Monto por grupo (User Team)</h2><span>detalle de costos</span></div>
-    <section class="card">
-      <h3>Facturado (MXN) por User Team</h3>
-      <div class="csub">Monto que corresponde a cada grupo.</div>
-      <div class="chart-host" id="chTeams"></div>
-      <div class="tbl-wrap" style="margin-top:14px"><table id="tblTeams"></table></div>
     </section>
 
     <p class="footer-note">Generado en el navegador · Lógica equivalente a <code>generar_reporte.py</code></p>
@@ -338,6 +338,8 @@ const CFG = {
   hojaUsab: "Usabilidad",
   rankLic: {premium:3, pro:2, standard:1},
   colsCostos: ["Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops","Cantidad lic"],
+  // Montos que se SUMAN al consolidar varios registros de un usuario.
+  colsSuma: ["Facturado (USD)","Facturado (MXN)","Presupuesto Ops"],
   metricasNum: ["Days Active","Chats","Messages","Projects Created","Projects Used",
     "Pull Requests","Code sessions","File Edits","Cowork Sessions","Cowork Messages",
     "Artifacts Created","Estimated Spend (USD)"],
@@ -422,13 +424,13 @@ function procesar(asigRows, usabRows){
       base={...g[0]};
     }else{
       nConsol++;
-      const ord=[...g].sort((a,b)=>rankLic(b["Licencia"])-rankLic(a["Licencia"]));
-      base={...ord[0]};
-      for(const c of CFG.colsCostos) base[c]=g.reduce((s,x)=>s+num(x[c]),0);
-      const fechas=g.map(x=>toDate(x["Fecha"])).filter(Boolean);
-      base["Fecha"]=fechas.length?new Date(Math.min(...fechas.map(d=>d.getTime()))):null;
-      const lics=ord.map(x=>String(x["Licencia"])).join(" + ");
-      const nota=`Consolidado de ${g.length} asignaciones (upgrade). Licencia vigente: ${base["Licencia"]}. Historial: ${lics}.`;
+      // Campos vigentes (Centro de costos, CeCo Team, User Team, Licencia,
+      // Uso, Fecha y Costo anual) -> del ÚLTIMO registro. Montos -> SUMA.
+      base={...g[g.length-1]};
+      for(const c of CFG.colsSuma) base[c]=g.reduce((s,x)=>s+num(x[c]),0);
+      base["Cantidad lic"]=g.reduce((s,x)=>s+num(x["Cantidad lic"]),0);
+      const lics=g.map(x=>String(x["Licencia"])).join(" -> ");
+      const nota=`Consolidado de ${g.length} registros. Campos vigentes del último registro (Licencia: ${base["Licencia"]}). Montos sumados. Historial: ${lics}.`;
       const prev=base["Consideraciones"];
       base["Consideraciones"]=(prev && String(prev).trim())? `${prev} | ${nota}` : nota;
     }
@@ -1074,7 +1076,7 @@ function exportar(){
   const det=STATE.rows.map(r=>{const o={}; for(const c of cols){
     let v=r[c]; if((c==="Fecha"||c==="Last Active")&&v) v=fmtDate(v); o[c]=v??((B.includes(c)||["Days Active"].includes(c))?0:"");}
     return o;});
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det,{header:cols}), "Análisis Detallado");
+  // (La hoja "Análisis Detallado" se agrega al final, ver más abajo.)
   // Volumetría
   const vol=aggVolumetria(STATE.consol).map(v=>({"Fecha de asignación":fmtDate(v.fecha),
     "Licencias en la fecha":v.lic,"Usuarios en la fecha":v.users,"Licencias acumuladas":v.licAcum,"Usuarios acumulados":v.usersAcum}));
@@ -1108,6 +1110,8 @@ function exportar(){
   const teams=aggTeams(STATE.consol).map(t=>({"User Team":t.team,Usuarios:t.users,Licencias:t.lic,
     "Costo anual (USD)":t.usd,"Facturado (USD)":t.fusd,"Facturado (MXN)":t.mxn}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teams), "Monto por User Team");
+  // Análisis detallado (al final)
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det,{header:cols}), "Análisis Detallado");
 
   XLSX.writeFile(wb, "Analisis_Usabilidad_Final.xlsx");
 }

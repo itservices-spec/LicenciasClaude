@@ -37,7 +37,7 @@ HOJA_USABILIDAD = "Usabilidad"
 # Ranking de licencias: mayor número = licencia "más alta / vigente".
 RANK_LICENCIAS = {"premium": 3, "pro": 2, "standard": 1}
 
-# Columnas numéricas de costos que se SUMAN al consolidar duplicados.
+# Columnas numéricas que se asegura tratar como número.
 COLS_COSTOS = [
     "Costo anual (USD)",
     "Facturado (USD)",
@@ -45,6 +45,12 @@ COLS_COSTOS = [
     "Presupuesto Ops",
     "Cantidad lic",
 ]
+# Reglas de consolidación cuando un correo tiene varios registros:
+#   - Campos vigentes: se toman del ÚLTIMO registro.
+#   - Montos: se SUMAN a lo largo de todos los registros del usuario.
+CAMPOS_ULTIMO = ["Centro de costos", "CeCo Team", "User Team",
+                 "Licencia", "Uso", "Fecha"]
+COLS_SUMA = ["Facturado (USD)", "Facturado (MXN)", "Presupuesto Ops"]
 
 # Métricas de usabilidad numéricas (para rellenar con 0 en el left join).
 METRICAS_NUM = [
@@ -99,7 +105,6 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
     print("\n[2] Normalizando llave de cruce y consolidando duplicados...")
     df = asig.copy()
     df["email_key"] = normaliza_correo(df["Correo electrónico"])
-    df["_rank_lic"] = df["Licencia"].apply(rank_licencia)
 
     # Asegura tipos numéricos en costos y fecha en la fecha de asignación.
     for c in COLS_COSTOS:
@@ -115,30 +120,34 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
             filas.append(fila)
             continue
 
-        # --- Consolidación de un correo con múltiples asignaciones (upgrade) ---
+        # --- Consolidación de un correo con múltiples registros ---
+        # Regla:
+        #   * Campos vigentes (Centro de costos, CeCo Team, User Team,
+        #     Licencia, Uso, Fecha) -> del ÚLTIMO registro.
+        #   * Montos (Facturado USD, Facturado MXN, Presupuesto Ops) -> SUMA.
+        #   * Cantidad lic -> SUMA (para reflejar la licencia vigente).
+        #   * Costo anual (USD) -> del último registro (acorde a la Licencia).
         n_consolidados += 1
-        g_ord = g.sort_values("_rank_lic", ascending=False)
-        base = g_ord.iloc[0].to_dict()  # fila con la licencia más alta
+        base = g.iloc[-1].to_dict()  # último registro = estado vigente
 
-        # Suma de costos numéricos.
-        for c in COLS_COSTOS:
+        for c in COLS_SUMA:
             if c in df.columns:
                 base[c] = g[c].sum()
-
-        # Fecha de asignación más antigua.
-        base["Fecha"] = g["Fecha"].min()
+        base["Cantidad lic"] = g["Cantidad lic"].sum()
 
         # Nota de consolidación en Consideraciones.
-        lics = " + ".join(g_ord["Licencia"].astype(str).tolist())
-        nota = (f"Consolidado de {len(g)} asignaciones (upgrade). "
-                f"Licencia vigente: {base['Licencia']}. Historial: {lics}.")
+        lics = " -> ".join(g["Licencia"].astype(str).tolist())
+        nota = (f"Consolidado de {len(g)} registros. Campos vigentes del último "
+                f"registro (Licencia: {base['Licencia']}; "
+                f"Fecha: {pd.Timestamp(base['Fecha']):%Y-%m-%d}). "
+                f"Montos sumados. Historial de licencias: {lics}.")
         prev = base.get("Consideraciones")
         base["Consideraciones"] = (
             f"{prev} | {nota}" if isinstance(prev, str) and prev.strip() else nota
         )
         filas.append(base)
 
-    consol = pd.DataFrame(filas).drop(columns=["_rank_lic"])
+    consol = pd.DataFrame(filas)
     print(f"    - Correos consolidados (upgrades): {n_consolidados}")
     print(f"    - Asignación consolidada: {consol.shape[0]} filas "
           f"(antes {asig.shape[0]})")
@@ -495,14 +504,21 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
     assert (final.loc[rec, "Días calendario"] < DIAS_MIN_EVALUACION).all(), \
         "Un usuario 'Reciente' tiene 15+ días de licencia!"
 
-    # Cuadre de costos: la consolidación no debe alterar el total.
+    # Cuadre de costos: los campos que se SUMAN no deben alterar el total.
+    # (Costo anual (USD) ahora se toma del último registro, por lo que puede
+    #  diferir del original: se reporta como informativo, sin aserción.)
     orig = pd.read_excel(ARCHIVO_ENTRADA_DEFAULT, sheet_name=HOJA_ASIGNACION)
-    for c in COLS_COSTOS:
+    orig.columns = [str(c).strip() for c in orig.columns]
+    for c in COLS_SUMA + ["Cantidad lic"]:
         o = pd.to_numeric(orig[c], errors="coerce").fillna(0).sum()
         n = pd.to_numeric(final[c], errors="coerce").fillna(0).sum()
         estado = "OK" if abs(o - n) < 0.01 else "DIFERENCIA"
-        print(f"      - {c}: original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
+        print(f"      - {c} (suma): original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
         assert abs(o - n) < 0.01, f"El total de {c} cambió tras consolidar!"
+    o_ca = pd.to_numeric(orig["Costo anual (USD)"], errors="coerce").fillna(0).sum()
+    n_ca = pd.to_numeric(final["Costo anual (USD)"], errors="coerce").fillna(0).sum()
+    print(f"      - Costo anual (USD) (último registro, informativo): "
+          f"original={o_ca:,.2f} | resultante={n_ca:,.2f}")
 
     print(f"\n    Distribución por Nivel de uso:")
     print(final["Nivel de uso"].value_counts().sort_index().to_string())
@@ -540,43 +556,45 @@ def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_cort
         fmt_int = wb.add_format({"num_format": "#,##0"})
         fmt_total = wb.add_format({"bold": True, "bg_color": "#E5E7EB", "top": 2})
 
-        # ---------------- Hoja principal: Análisis Detallado ----------------
-        hoja = "Análisis Detallado"
-        startrow = 3
-        final.to_excel(writer, sheet_name=hoja, startrow=startrow, index=False)
-        ws = writer.sheets[hoja]
-        ws.write(0, 0, "Análisis de Usabilidad de Licencias Claude", fmt_titulo)
-        ws.write(1, 0, f"Fecha de corte: {pd.Timestamp(fecha_corte):%Y-%m-%d}  |  "
-                       f"Usuarios: {len(final)}", fmt_sub)
+        # ---------------- Hoja: Análisis Detallado (se escribe al final) ----
+        def _hoja_detalle():
+            hoja = "Análisis Detallado"
+            startrow = 3
+            final.to_excel(writer, sheet_name=hoja, startrow=startrow, index=False)
+            ws = writer.sheets[hoja]
+            ws.write(0, 0, "Análisis de Usabilidad de Licencias Claude", fmt_titulo)
+            ws.write(1, 0, f"Fecha de corte: {pd.Timestamp(fecha_corte):%Y-%m-%d}  |  "
+                           f"Usuarios: {len(final)}", fmt_sub)
 
-        # Encabezados coloreados por bloque (A/B/C).
-        bloque_b = {"Días calendario", "Días hábiles", "Días sin uso"}
-        bloque_c = {"% de uso", "Nivel de uso", "Amplitud de adopción (0-5)",
-                    "Acción sugerida", "Consideraciones"}
-        for col, name in enumerate(final.columns):
-            if name in bloque_b:
-                f = fmt_hdr_b
-            elif name in bloque_c:
-                f = fmt_hdr_c
-            else:
-                f = fmt_hdr_a
-            ws.write(startrow, col, name, f)
+            # Encabezados coloreados por bloque (A/B/C).
+            bloque_b = {"Días calendario", "Días hábiles", "Días sin uso",
+                        "Días desde últ. conexión"}
+            bloque_c = {"% de uso", "Nivel de uso", "Amplitud de adopción (0-5)",
+                        "Acción sugerida", "Consideraciones"}
+            for col, name in enumerate(final.columns):
+                if name in bloque_b:
+                    f = fmt_hdr_b
+                elif name in bloque_c:
+                    f = fmt_hdr_c
+                else:
+                    f = fmt_hdr_a
+                ws.write(startrow, col, name, f)
 
-        # Anchos de columna aproximados.
-        for col, name in enumerate(final.columns):
-            ancho = min(max(len(str(name)) + 2, 12), 34)
-            ws.set_column(col, col, ancho)
-        ws.freeze_panes(startrow + 1, 2)
-        ws.autofilter(startrow, 0, startrow + len(final), len(final.columns) - 1)
+            # Anchos de columna aproximados.
+            for col, name in enumerate(final.columns):
+                ancho = min(max(len(str(name)) + 2, 12), 34)
+                ws.set_column(col, col, ancho)
+            ws.freeze_panes(startrow + 1, 2)
+            ws.autofilter(startrow, 0, startrow + len(final), len(final.columns) - 1)
 
-        # Escala de color en % de uso (semáforo).
-        if "% de uso" in final.columns:
-            ci = list(final.columns).index("% de uso")
-            ws.conditional_format(
-                startrow + 1, ci, startrow + len(final), ci,
-                {"type": "3_color_scale",
-                 "min_color": "#F8696B", "mid_color": "#FFEB84",
-                 "max_color": "#63BE7B"})
+            # Escala de color en % de uso (semáforo).
+            if "% de uso" in final.columns:
+                ci = list(final.columns).index("% de uso")
+                ws.conditional_format(
+                    startrow + 1, ci, startrow + len(final), ci,
+                    {"type": "3_color_scale",
+                     "min_color": "#F8696B", "mid_color": "#FFEB84",
+                     "max_color": "#63BE7B"})
 
         # ---------------- Hoja: Volumetría de Licencias ----------------
         hoja2 = "Volumetría Licencias"
@@ -734,9 +752,12 @@ def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_cort
         chart2.set_size({"width": 720, "height": 420})
         ws4.insert_chart(2, len(montos.columns) + 1, chart2)
 
-    print(f"    - Archivo generado con hojas: Análisis Detallado, "
-          f"Volumetría Licencias, Usabilidad Baja, Resumen Niveles, "
-          f"% Uso por Team, Consumo Presup. Ops, Monto por User Team.")
+        # ---------------- Hoja: Análisis Detallado (al final) ----------------
+        _hoja_detalle()
+
+    print(f"    - Archivo generado con hojas: Volumetría Licencias, "
+          f"Usabilidad Baja, Resumen Niveles, % Uso por Team, "
+          f"Consumo Presup. Ops, Monto por User Team, Análisis Detallado.")
 
 
 # --------------------------------------------------------------------------- #
