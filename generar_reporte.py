@@ -28,7 +28,7 @@ import pandas as pd
 # --------------------------------------------------------------------------- #
 # Configuración
 # --------------------------------------------------------------------------- #
-ARCHIVO_ENTRADA_DEFAULT = "Usuarios de licencias Claude con CeCo - 07 Julio 2026.xlsx"
+ARCHIVO_ENTRADA_DEFAULT = "Usuarios de licencias Claude con CeCo.xlsx"
 ARCHIVO_SALIDA = "Analisis_Usabilidad_Final.xlsx"
 
 HOJA_ASIGNACION = "Asignación"
@@ -94,9 +94,25 @@ def leer_hojas(ruta: str):
     print(f"[1] Leyendo archivo de entrada: {ruta}")
     asig = pd.read_excel(ruta, sheet_name=HOJA_ASIGNACION)
     usab = pd.read_excel(ruta, sheet_name=HOJA_USABILIDAD)
+    # Recorta espacios en los nombres de columna (algunas cabeceras del
+    # origen traen espacios iniciales/finales).
+    asig.columns = [str(c).strip() for c in asig.columns]
+    usab.columns = [str(c).strip() for c in usab.columns]
     print(f"    - Asignación: {asig.shape[0]} filas x {asig.shape[1]} columnas")
     print(f"    - Usabilidad: {usab.shape[0]} filas x {usab.shape[1]} columnas")
     return asig, usab
+
+
+def resolver_fecha_asignacion(df: pd.DataFrame) -> str:
+    """Devuelve el nombre de la columna con la fecha real de asignación.
+
+    Prefiere 'Fecha Asig' (fecha de asignación real de la licencia) si existe;
+    si no, cae a 'Fecha'.
+    """
+    for cand in ("Fecha Asig", "Fecha Asignación", "Fecha asignación", "Fecha Asignacion"):
+        if cand in df.columns:
+            return cand
+    return "Fecha"
 
 
 # --------------------------------------------------------------------------- #
@@ -106,6 +122,13 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
     print("\n[2] Normalizando llave de cruce y consolidando duplicados...")
     df = asig.copy()
     df["email_key"] = normaliza_correo(df["Correo electrónico"])
+
+    # Fecha de asignación real: usa 'Fecha Asig' si existe; si no, 'Fecha'.
+    fuente_fecha = resolver_fecha_asignacion(df)
+    df["Fecha"] = pd.to_datetime(df[fuente_fecha], errors="coerce")
+    print(f"    - Fecha de asignación tomada de la columna: '{fuente_fecha}'"
+          + ("" if fuente_fecha == "Fecha Asig"
+             else "  (no se encontró 'Fecha Asig'; se usa 'Fecha')"))
 
     # Asegura tipos numéricos en costos y fecha en la fecha de asignación.
     for c in COLS_COSTOS:
@@ -436,27 +459,40 @@ def resumen_aprovechamiento(costo_niv: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-def monto_por_team(consol: pd.DataFrame) -> pd.DataFrame:
-    """Monto que corresponde a cada grupo (User Team)."""
+def monto_por_team(asig: pd.DataFrame) -> pd.DataFrame:
+    """Monto por grupo (User Team) calculado desde los registros CRUDOS.
+
+    Se calcula sobre la hoja "Asignación" sin consolidar (cada registro se
+    suma en el equipo donde se facturó), para coincidir con la contabilidad /
+    tabla dinámica administrativa. Un usuario con upgrade en dos equipos
+    distintos aporta su monto a cada equipo tal como fue facturado.
+    """
+    df = asig.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    for c in ["Costo anual (USD)", "Facturado (USD)", "Facturado (MXN)",
+              "Presupuesto Ops", "Cantidad lic"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     g = (
-        consol.groupby("User Team")
+        df.groupby("User Team")
         .agg(**{
-            "Usuarios": ("email_key", "nunique"),
+            "Registros": ("User Team", "count"),
             "Licencias": ("Cantidad lic", "sum"),
             "Costo anual (USD)": ("Costo anual (USD)", "sum"),
             "Facturado (USD)": ("Facturado (USD)", "sum"),
             "Facturado (MXN)": ("Facturado (MXN)", "sum"),
+            "Presupuesto Ops": ("Presupuesto Ops", "sum"),
         })
         .reset_index()
         .sort_values("Facturado (MXN)", ascending=False)
     )
     total = pd.DataFrame([{
         "User Team": "TOTAL",
-        "Usuarios": g["Usuarios"].sum(),
+        "Registros": g["Registros"].sum(),
         "Licencias": g["Licencias"].sum(),
         "Costo anual (USD)": g["Costo anual (USD)"].sum(),
         "Facturado (USD)": g["Facturado (USD)"].sum(),
         "Facturado (MXN)": g["Facturado (MXN)"].sum(),
+        "Presupuesto Ops": g["Presupuesto Ops"].sum(),
     }])
     return pd.concat([g, total], ignore_index=True)
 
@@ -567,14 +603,28 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
         "Un usuario 'Reciente' tiene 15+ días de licencia!"
 
     # Cuadre de costos: los campos que se SUMAN no deben alterar el total.
+    # La consolidación suma por usuario y luego se excluyen los usuarios cuya
+    # Cantidad lic total = 0, por lo que se compara contra el total original
+    # de los usuarios que SÍ sobreviven al filtro.
     orig = pd.read_excel(ARCHIVO_ENTRADA_DEFAULT, sheet_name=HOJA_ASIGNACION)
     orig.columns = [str(c).strip() for c in orig.columns]
+    orig["_k"] = normaliza_correo(orig["Correo electrónico"])
+    orig["Cantidad lic"] = pd.to_numeric(orig["Cantidad lic"], errors="coerce").fillna(0)
+    cant_por_correo = orig.groupby("_k")["Cantidad lic"].sum()
+    vivos = set(cant_por_correo[cant_por_correo > 0].index)
+    orig_vivos = orig[orig["_k"].isin(vivos)]
+    excluidos = orig["_k"].nunique() - len(vivos)
+    print(f"      (usuarios excluidos por Cantidad lic = 0: {excluidos})")
     for c in COLS_SUMA + ["Cantidad lic"]:
-        o = pd.to_numeric(orig[c], errors="coerce").fillna(0).sum()
+        o = pd.to_numeric(orig_vivos[c], errors="coerce").fillna(0).sum()
         n = pd.to_numeric(final[c], errors="coerce").fillna(0).sum()
         estado = "OK" if abs(o - n) < 0.01 else "DIFERENCIA"
-        print(f"      - {c} (suma): original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
+        print(f"      - {c} (suma, usuarios vigentes): "
+              f"original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
         assert abs(o - n) < 0.01, f"El total de {c} cambió tras consolidar!"
+    # Total bruto (todos los registros) para referencia contable.
+    tot_mxn = pd.to_numeric(orig["Facturado (MXN)"], errors="coerce").fillna(0).sum()
+    print(f"      Facturado (MXN) bruto (todos los registros): {tot_mxn:,.2f}")
 
     print(f"\n    Distribución por Nivel de uso:")
     print(final["Nivel de uso"].value_counts().sort_index().to_string())
@@ -853,11 +903,13 @@ def exportar(final, volum, usuarios_usab, montos, niveles, usoteam, presupops,
         hoja4 = "Monto por User Team"
         montos.to_excel(writer, sheet_name=hoja4, startrow=2, index=False)
         ws4 = writer.sheets[hoja4]
-        ws4.write(0, 0, "Monto de licencias por grupo (User Team)", fmt_titulo)
+        ws4.write(0, 0, "Monto de licencias por grupo (User Team) — desde "
+                        "registros crudos (contabilidad)", fmt_titulo)
         for col, name in enumerate(montos.columns):
             ws4.write(2, col, name, fmt_hdr)
             ws4.set_column(col, col, max(len(str(name)) + 2, 16))
-        for cname in ["Costo anual (USD)", "Facturado (USD)", "Facturado (MXN)"]:
+        for cname in ["Costo anual (USD)", "Facturado (USD)", "Facturado (MXN)",
+                      "Presupuesto Ops"]:
             if cname in montos.columns:
                 ci = list(montos.columns).index(cname)
                 ws4.set_column(ci, ci, 18, fmt_money)
@@ -904,7 +956,7 @@ def main():
     # Indicadores / secciones.
     volum = volumetria_licencias(consol)
     usuarios_usab = usabilidad_usuarios(final)
-    montos = monto_por_team(consol)
+    montos = monto_por_team(asig)  # crudo: coincide con la contabilidad
     niveles = resumen_niveles(final)
     usoteam = uso_por_team(final)
     presupops = presupuesto_ops(consol)

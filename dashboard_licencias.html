@@ -380,6 +380,7 @@ const $ = s => document.querySelector(s);
 const fmtInt = n => (n==null||isNaN(n)) ? "0" : Math.round(n).toLocaleString("es-MX");
 const fmtNum = (n,d=1) => (n==null||isNaN(n)) ? "0" : Number(n).toLocaleString("es-MX",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtMXN = n => "$"+ (isNaN(n)?0:n).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2});
+const r2 = n => Math.round((Number(n)||0)*100)/100;
 const fmtDate = d => !d ? "—" : new Date(d).toISOString().slice(0,10);
 
 /* ---------- Utilidades de dominio ---------- */
@@ -442,6 +443,12 @@ const CLASIF_COLOR = {"Productivo":"#0ca30c","Ocioso":"#d03b3b","En adopción":"
  *  Núcleo de procesamiento (equivalente al pipeline de Python)
  * ===================================================================== */
 function procesar(asigRows, usabRows){
+  /* Fecha de asignación real: usa 'Fecha Asig' si existe; si no, 'Fecha'. */
+  const FECHA_CANDS=["Fecha Asig","Fecha Asignación","Fecha asignación","Fecha Asignacion"];
+  const fechaCol = (asigRows.length ? FECHA_CANDS.find(c=>c in asigRows[0]) : null) || "Fecha";
+  const usaFechaAsig = fechaCol!=="Fecha";
+  if(usaFechaAsig) asigRows.forEach(r=> r["Fecha"]=r[fechaCol]);
+
   /* --- Consolidación de asignaciones duplicadas (upgrades) --- */
   const grupos = new Map();
   for(const r of asigRows){
@@ -534,7 +541,7 @@ function procesar(asigRows, usabRows){
     filas.push(row);
   }
 
-  return {rows:filas, consol, corte, nConsol, nSinLic,
+  return {rows:filas, consol, corte, nConsol, nSinLic, asigRaw:asigRows, usaFechaAsig,
           conUso:filas.filter(f=>f.__tieneUso).length};
 }
 
@@ -604,19 +611,22 @@ function aggCostoNivel(rows){
   return {niv, aprov, totalMXN, totalUSD:niv.reduce((s,o)=>s+o.usd,0),
     totalUsers:niv.reduce((s,o)=>s+o.users,0)};
 }
-function aggTeams(consol){
+/* Monto por User Team desde los registros CRUDOS (coincide con la
+   contabilidad / tabla dinámica): cada registro suma en el equipo donde se
+   facturó, incluso si un usuario tiene upgrade en dos equipos distintos. */
+function aggTeams(asigRaw){
   const m=new Map();
-  for(const r of consol){
+  for(const r of asigRaw){
     const t=r["User Team"] ?? "—";
-    const o=m.get(t) || {team:t, users:new Set(), lic:0, usd:0, fusd:0, mxn:0};
-    o.users.add(r.__key);
+    const o=m.get(t) || {team:t, regs:0, lic:0, usd:0, fusd:0, mxn:0, po:0};
+    o.regs++;
     o.lic+=num(r["Cantidad lic"]); o.usd+=num(r["Costo anual (USD)"]);
     o.fusd+=num(r["Facturado (USD)"]); o.mxn+=num(r["Facturado (MXN)"]);
+    o.po+=num(r["Presupuesto Ops"]);
     m.set(t,o);
   }
-  const arr=[...m.values()].map(o=>({team:o.team, users:o.users.size, lic:o.lic,
-    usd:o.usd, fusd:o.fusd, mxn:o.mxn})).sort((a,b)=>b.mxn-a.mxn);
-  return arr;
+  return [...m.values()].map(o=>({team:o.team, regs:o.regs, users:o.regs, lic:o.lic,
+    usd:o.usd, fusd:o.fusd, mxn:o.mxn, po:o.po})).sort((a,b)=>b.mxn-a.mxn);
 }
 
 /* ===================================================================== *
@@ -809,7 +819,9 @@ function pctBarChart(host, data){
  * ===================================================================== */
 function renderKPIs(P){
   const totalLic=P.consol.reduce((s,r)=>s+num(r["Cantidad lic"]),0);
-  const totalMXN=P.consol.reduce((s,r)=>s+num(r["Facturado (MXN)"]),0);
+  // Facturado total: contable bruto (todos los registros), coincide con la
+  // tabla dinámica administrativa.
+  const totalMXN=P.asigRaw.reduce((s,r)=>s+num(r["Facturado (MXN)"]),0);
   const usados=P.rows.filter(r=>r["Days Active"]>0);
   const promUso=usados.length? usados.reduce((s,r)=>s+r["% de uso"],0)/usados.length : 0;
   const sinUso=P.rows.length-P.conUso;
@@ -817,7 +829,7 @@ function renderKPIs(P){
   const items=[
     {l:"Usuarios (consolidados)", v:fmtInt(P.rows.length), f:`${P.nConsol} upgrade(s) consolidado(s)`, c:"--brand"},
     {l:"Licencias asignadas", v:fmtInt(totalLic), f:`${P.conUso} con datos de uso · ${sinUso} sin uso`, c:"--series-1"},
-    {l:"Facturado total", v:fmtMXN(totalMXN), f:"MXN acumulado", c:"--brand-2"},
+    {l:"Facturado total", v:fmtMXN(totalMXN), f:"MXN contable (todos los registros)", c:"--brand-2"},
     {l:"% de uso promedio", v:fmtNum(promUso)+"%", f:"sobre usuarios con actividad", c:"--lvl-2"},
     {l:"A reasignar / cancelar", v:fmtInt(reasignar), f:"usuarios en nivel Nulo", c:"--lvl-5"},
   ];
@@ -829,23 +841,27 @@ function renderKPIs(P){
       <div class="bar-accent" style="background:var(${k.c})"></div>
     </div>`).join("");
   $("#kpiSub").textContent=`corte ${fmtDate(P.corte)}`
+    + ` · fecha de asignación: ${P.usaFechaAsig?"Fecha Asig":"Fecha"}`
     + (P.nSinLic? ` · ${P.nSinLic} registro(s) sin licencia vigente excluido(s)` : "");
 }
 
 function renderTeams(teams){
-  const total=teams.reduce((a,t)=>({users:a.users+t.users,lic:a.lic+t.lic,usd:a.usd+t.usd,fusd:a.fusd+t.fusd,mxn:a.mxn+t.mxn}),
-    {users:0,lic:0,usd:0,fusd:0,mxn:0});
+  const total=teams.reduce((a,t)=>({regs:a.regs+t.regs,lic:a.lic+t.lic,usd:a.usd+t.usd,fusd:a.fusd+t.fusd,mxn:a.mxn+t.mxn,po:a.po+t.po}),
+    {regs:0,lic:0,usd:0,fusd:0,mxn:0,po:0});
   const head=`<thead><tr>
-    <th>User Team</th><th class="num">Usuarios</th><th class="num">Licencias</th>
-    <th class="num">Costo anual (USD)</th><th class="num">Facturado (USD)</th><th class="num">Facturado (MXN)</th>
+    <th>User Team</th><th class="num">Registros</th><th class="num">Licencias</th>
+    <th class="num">Costo anual (USD)</th><th class="num">Facturado (USD)</th>
+    <th class="num">Facturado (MXN)</th><th class="num">Presupuesto Ops</th>
     </tr></thead>`;
   const body=teams.map(t=>`<tr>
-    <td>${t.team}</td><td class="num">${fmtInt(t.users)}</td><td class="num">${fmtInt(t.lic)}</td>
-    <td class="num">${fmtMXN(t.usd)}</td><td class="num">${fmtMXN(t.fusd)}</td><td class="num">${fmtMXN(t.mxn)}</td>
+    <td>${t.team}</td><td class="num">${fmtInt(t.regs)}</td><td class="num">${fmtInt(t.lic)}</td>
+    <td class="num">${fmtMXN(t.usd)}</td><td class="num">${fmtMXN(t.fusd)}</td>
+    <td class="num">${fmtMXN(t.mxn)}</td><td class="num">${fmtMXN(t.po)}</td>
     </tr>`).join("");
-  const totalRow=`<tr class="total"><td>TOTAL</td><td class="num">${fmtInt(total.users)}</td>
+  const totalRow=`<tr class="total"><td>TOTAL</td><td class="num">${fmtInt(total.regs)}</td>
     <td class="num">${fmtInt(total.lic)}</td><td class="num">${fmtMXN(total.usd)}</td>
-    <td class="num">${fmtMXN(total.fusd)}</td><td class="num">${fmtMXN(total.mxn)}</td></tr>`;
+    <td class="num">${fmtMXN(total.fusd)}</td><td class="num">${fmtMXN(total.mxn)}</td>
+    <td class="num">${fmtMXN(total.po)}</td></tr>`;
   $("#tblTeams").innerHTML=head+"<tbody>"+body+totalRow+"</tbody>";
 }
 
@@ -1109,7 +1125,7 @@ function renderAll(P){
   renderKPIs(P);
   const volum=aggVolumetria(P.consol);
   const niveles=aggNiveles(P.rows);
-  const teams=aggTeams(P.consol);
+  const teams=aggTeams(P.asigRaw);
   const usoteam=aggUsoTeam(P.rows);
   const presupops=aggPresupOps(P.consol);
   const costonivel=aggCostoNivel(P.rows);
@@ -1260,9 +1276,13 @@ function exportar(){
   poRows.push({"Fecha de asignación":"TOTAL",Usuarios:po.total.users,
     "Presupuesto Ops (MXN)":Math.round(po.total.po*100)/100,"Facturado (MXN)":Math.round(po.total.mxn*100)/100});
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(poRows), "Consumo Presup. Ops");
-  // Monto por team (al final)
-  const teams=aggTeams(STATE.consol).map(t=>({"User Team":t.team,Usuarios:t.users,Licencias:t.lic,
-    "Costo anual (USD)":t.usd,"Facturado (USD)":t.fusd,"Facturado (MXN)":t.mxn}));
+  // Monto por team (al final) — desde registros crudos (contabilidad)
+  const teamsAgg=aggTeams(STATE.asigRaw);
+  const teamsTot=teamsAgg.reduce((a,t)=>({regs:a.regs+t.regs,lic:a.lic+t.lic,usd:a.usd+t.usd,fusd:a.fusd+t.fusd,mxn:a.mxn+t.mxn,po:a.po+t.po}),{regs:0,lic:0,usd:0,fusd:0,mxn:0,po:0});
+  const teams=teamsAgg.map(t=>({"User Team":t.team,Registros:t.regs,Licencias:t.lic,
+    "Costo anual (USD)":r2(t.usd),"Facturado (USD)":r2(t.fusd),"Facturado (MXN)":r2(t.mxn),"Presupuesto Ops":r2(t.po)}));
+  teams.push({"User Team":"TOTAL",Registros:teamsTot.regs,Licencias:teamsTot.lic,
+    "Costo anual (USD)":r2(teamsTot.usd),"Facturado (USD)":r2(teamsTot.fusd),"Facturado (MXN)":r2(teamsTot.mxn),"Presupuesto Ops":r2(teamsTot.po)});
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teams), "Monto por User Team");
   // Análisis detallado (al final)
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det,{header:cols}), "Análisis Detallado");
