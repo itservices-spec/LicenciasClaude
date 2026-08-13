@@ -205,6 +205,23 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   .niv-chips .chip{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:9px; padding:6px 10px; background:var(--surface-2); font-size:12px; min-width:150px}
   .niv-chips .chip b{font-size:12.5px}
   .niv-chips .chip span{color:var(--muted)}
+  /* Filtro multi-nivel (chips seleccionables) */
+  .lvl-filter{display:flex; gap:7px; flex-wrap:wrap; align-items:center}
+  .lvl-chip{display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:20px;
+    border:1.5px solid var(--border-strong); background:var(--surface); color:var(--text-2);
+    font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; transition:.12s}
+  .lvl-chip .dot{width:10px; height:10px; border-radius:50%; display:inline-block}
+  .lvl-chip.on{color:#fff; border-color:transparent}
+  .lvl-chip.off{opacity:.55}
+  .lvl-chip .cnt{font-weight:700; opacity:.85}
+  .lvl-chip.all{border-style:dashed}
+  /* Barra apilada de aprovechamiento */
+  .stackbar{display:flex; width:100%; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--border)}
+  .stackbar .seg{display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; min-width:2px; white-space:nowrap}
+  .stackleg{display:flex; gap:16px; flex-wrap:wrap; margin-top:9px; font-size:12.5px}
+  .stackleg .it{display:inline-flex; align-items:center; gap:7px}
+  .stackleg .sw{width:12px; height:12px; border-radius:3px}
+  .stackleg b{font-variant-numeric:tabular-nums}
 
   #app{display:none}
   .footer-note{margin-top:40px; font-size:12px; color:var(--muted); text-align:center}
@@ -282,13 +299,25 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       </div>
     </div>
 
-    <div class="section-title"><h2>Usuarios con usabilidad baja</h2><span>nivel Bajo o Nulo — candidatos a revisión</span></div>
+    <div class="section-title"><h2>Usabilidad de los usuarios</h2><span>filtra por uno o varios niveles</span></div>
     <section>
       <div class="tbl-tools">
+        <div class="lvl-filter" id="usabLevels"></div>
         <input id="bajaSearch" type="search" placeholder="Buscar nombre, correo o equipo…">
         <span class="muted" id="bajaCount"></span>
       </div>
       <div class="tbl-wrap"><table id="tblBaja"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Costo por nivel de uso</h2><span>monto ocioso vs. productivo</span></div>
+    <section class="card">
+      <h3>¿Cuánto cuesta cada nivel de uso?</h3>
+      <div class="csub">Facturado (MXN) por nivel y su clasificación: <b>productivo</b> (Muy Alto/Alto/Medio), <b>ocioso</b> (Bajo/Nulo) y <b>en adopción</b> (Reciente).</div>
+      <div class="kpis" id="aprovTiles" style="margin-bottom:16px"></div>
+      <div class="chart-host" id="chCostoNivel"></div>
+      <div class="csub" style="margin-top:6px">Distribución del facturado total</div>
+      <div id="aprovBar"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblCostoNivel"></table></div>
     </section>
 
     <div class="section-title"><h2>Consumo — usuarios con Presupuesto Ops</h2><span>Presupuesto Ops &gt; 0, por fecha de asignación</span></div>
@@ -404,6 +433,10 @@ function accionSugerida(nivel,diasSinUso){
 const DIAS_MIN_EVALUACION = 15;
 const NIVEL_CLS = {"1.Muy Alto":"l1","2.Alto":"l2","3.Medio":"l3","4.Bajo":"l4","5.Nulo":"l5","Reciente":"lr"};
 const NIVEL_ORDER = ["1.Muy Alto","2.Alto","3.Medio","4.Bajo","5.Nulo","Reciente"];
+// Clasificación de aprovechamiento del gasto por nivel de uso.
+const CLASIF_NIVEL = {"1.Muy Alto":"Productivo","2.Alto":"Productivo","3.Medio":"Productivo",
+  "4.Bajo":"Ocioso","5.Nulo":"Ocioso","Reciente":"En adopción"};
+const CLASIF_COLOR = {"Productivo":"#0ca30c","Ocioso":"#d03b3b","En adopción":"#64748b"};
 
 /* ===================================================================== *
  *  Núcleo de procesamiento (equivalente al pipeline de Python)
@@ -552,6 +585,24 @@ function aggUsoTeam(rows){
   }
   return [...m.values()].map(o=>({team:o.team, users:o.n, prom:o.sum/o.n, daProm:o.da/o.n}))
     .sort((a,b)=>b.prom-a.prom);
+}
+/* Costo por nivel de uso + clasificación ocioso/productivo. */
+function aggCostoNivel(rows){
+  const m=new Map(NIVEL_ORDER.map(n=>[n,{nivel:n,users:0,usd:0,mxn:0}]));
+  for(const r of rows){ const o=m.get(r["Nivel de uso"]); if(o){
+    o.users++; o.usd+=num(r["Costo anual (USD)"]); o.mxn+=num(r["Facturado (MXN)"]); } }
+  const niv=NIVEL_ORDER.map(n=>({...m.get(n), clasif:CLASIF_NIVEL[n]})).filter(o=>o.users>0);
+  const totalMXN=niv.reduce((s,o)=>s+o.mxn,0);
+  niv.forEach(o=>o.pct = totalMXN? o.mxn/totalMXN*100 : 0);
+  // Resumen por clasificación.
+  const cm=new Map();
+  for(const o of niv){ const c=cm.get(o.clasif) || {clasif:o.clasif,users:0,usd:0,mxn:0};
+    c.users+=o.users; c.usd+=o.usd; c.mxn+=o.mxn; cm.set(o.clasif,c); }
+  const orden={"Productivo":0,"En adopción":1,"Ocioso":2};
+  const aprov=[...cm.values()].sort((a,b)=>orden[a.clasif]-orden[b.clasif]);
+  aprov.forEach(c=>c.pct = totalMXN? c.mxn/totalMXN*100 : 0);
+  return {niv, aprov, totalMXN, totalUSD:niv.reduce((s,o)=>s+o.usd,0),
+    totalUsers:niv.reduce((s,o)=>s+o.users,0)};
 }
 function aggTeams(consol){
   const m=new Map();
@@ -798,30 +849,55 @@ function renderTeams(teams){
   $("#tblTeams").innerHTML=head+"<tbody>"+body+totalRow+"</tbody>";
 }
 
-let BAJA=[];
-function renderBaja(rows){
-  // Solo Bajo/Nulo (los "Reciente" no son evaluables); agrupado por User Team.
-  BAJA=rows.filter(r=>r["Nivel de uso"]==="4.Bajo"||r["Nivel de uso"]==="5.Nulo")
-    .sort((a,b)=> String(a["User Team"]).localeCompare(String(b["User Team"]))
-      || (b["Nivel de uso"]).localeCompare(a["Nivel de uso"]) || a["% de uso"]-b["% de uso"]);
-  drawBaja();
+// Tabla de usabilidad de TODOS los usuarios, con filtro multi-nivel.
+let USAB=[];
+let USAB_LEVELS=new Set(NIVEL_ORDER);  // niveles seleccionados (por defecto todos)
+function renderUsab(rows){
+  USAB=[...rows].sort((a,b)=>
+      (NIVEL_ORDER.indexOf(a["Nivel de uso"])-NIVEL_ORDER.indexOf(b["Nivel de uso"]))
+      || String(a["User Team"]).localeCompare(String(b["User Team"]))
+      || a["% de uso"]-b["% de uso"]);
+  drawLevelChips();
+  drawUsab();
 }
-function drawBaja(){
+function drawLevelChips(){
+  const counts={}; NIVEL_ORDER.forEach(n=>counts[n]=0);
+  USAB.forEach(r=>counts[r["Nivel de uso"]]++);
+  const present=NIVEL_ORDER.filter(n=>counts[n]>0);
+  const allOn=present.every(n=>USAB_LEVELS.has(n));
+  let html=`<span class="lvl-chip all ${allOn?'on':'off'}" data-lvl="__all"
+      style="${allOn?'background:var(--brand)':''}">Todos</span>`;
+  html+=present.map(n=>{
+    const on=USAB_LEVELS.has(n), color=nivelColor(n);
+    return `<span class="lvl-chip ${on?'on':'off'}" data-lvl="${n}"
+        style="${on?`background:${color}`:''}">
+        <span class="dot" style="background:${on?'#fff':color}"></span>${n}
+        <span class="cnt">${counts[n]}</span></span>`;
+  }).join("");
+  const host=$("#usabLevels"); host.innerHTML=html;
+  host.querySelectorAll(".lvl-chip").forEach(ch=>ch.onclick=()=>{
+    const lvl=ch.dataset.lvl;
+    if(lvl==="__all"){
+      if(present.every(n=>USAB_LEVELS.has(n))) USAB_LEVELS=new Set();
+      else USAB_LEVELS=new Set(present);
+    }else{
+      if(USAB_LEVELS.has(lvl)) USAB_LEVELS.delete(lvl); else USAB_LEVELS.add(lvl);
+    }
+    drawLevelChips(); drawUsab();
+  });
+}
+function drawUsab(){
   const q=$("#bajaSearch").value.trim().toLowerCase();
-  const f=BAJA.filter(r=>!q || [r["Nombre"],r["Correo electrónico"],r["User Team"]].join(" ").toLowerCase().includes(q));
-  const head=`<thead><tr><th>Nombre</th><th>Correo</th>
+  const f=USAB.filter(r=> USAB_LEVELS.has(r["Nivel de uso"])
+    && (!q || [r["Nombre"],r["Correo electrónico"],r["User Team"]].join(" ").toLowerCase().includes(q)));
+  const head=`<thead><tr><th>Nombre</th><th>Correo</th><th>User Team</th>
     <th>Nivel</th><th class="num">% uso</th><th class="num">Última conexión</th>
     <th class="num">Días desde conexión</th>
     <th class="num">Días activos</th><th class="num">Días hábiles</th>
     <th class="num">Días sin uso (háb.)</th><th>Acción sugerida</th></tr></thead>`;
-  // Agrupación por User Team con fila-encabezado por grupo.
-  const groups=new Map();
-  for(const r of f){ const t=r["User Team"]??"—"; (groups.get(t)||groups.set(t,[]).get(t)).push(r); }
-  let body="";
-  for(const [team,rs] of groups){
-    body+=`<tr class="grp"><td colspan="10">${team} · ${rs.length} usuario(s)</td></tr>`;
-    body+=rs.map(r=>`<tr>
+  const body=f.map(r=>`<tr>
       <td>${r["Nombre"]??""}</td><td>${r["Correo electrónico"]??""}</td>
+      <td><span class="tag">${r["User Team"]??""}</span></td>
       <td><span class="pill ${NIVEL_CLS[r["Nivel de uso"]]}">${r["Nivel de uso"]}</span></td>
       <td class="num">${fmtNum(r["% de uso"])}</td>
       <td class="num">${r["Last Active"]?fmtDate(r["Last Active"]):'<span class="muted">Sin registro</span>'}</td>
@@ -829,9 +905,9 @@ function drawBaja(){
       <td class="num">${fmtInt(r["Days Active"])}</td><td class="num">${fmtInt(r["Días hábiles"])}</td>
       <td class="num">${fmtInt(r["Días sin uso"])}</td>
       <td>${r["Acción sugerida"]}</td></tr>`).join("");
-  }
-  $("#tblBaja").innerHTML=head+"<tbody>"+body+"</tbody>";
-  $("#bajaCount").textContent=`${f.length} usuario(s) en ${groups.size} equipo(s)`;
+  $("#tblBaja").innerHTML=head+"<tbody>"+(body||'<tr><td colspan="11" class="muted" style="text-align:center;padding:18px">Selecciona al menos un nivel</td></tr>')+"</tbody>";
+  const nteams=new Set(f.map(r=>r["User Team"])).size;
+  $("#bajaCount").textContent=`${f.length} usuario(s) · ${USAB_LEVELS.size} nivel(es) · ${nteams} equipo(s)`;
 }
 
 const DET_COLS=[
@@ -900,6 +976,66 @@ function renderPresupOps(po){
   const total=`<tr class="total"><td>TOTAL</td><td class="num">${fmtInt(po.total.users)}</td>
     <td class="num">${fmtMXN(po.total.po)}</td><td class="num">${fmtMXN(po.total.mxn)}</td></tr>`;
   $("#tblPresupOps").innerHTML=head+"<tbody>"+body+total+"</tbody>";
+}
+
+/* Costo por nivel de uso: tiles, barra apilada, gráfico y tabla. */
+function renderCostoNivel(cn){
+  // Tiles de aprovechamiento.
+  $("#aprovTiles").innerHTML=cn.aprov.map(c=>`
+    <div class="kpi">
+      <div class="label">Monto ${c.clasif.toLowerCase()}</div>
+      <div class="val">${fmtMXN(c.mxn)}</div>
+      <div class="foot">${fmtInt(c.users)} usuario(s) · ${fmtNum(c.pct)}% del facturado</div>
+      <div class="bar-accent" style="background:${CLASIF_COLOR[c.clasif]}"></div>
+    </div>`).join("");
+  // Barra apilada (distribución del facturado).
+  const seg=cn.aprov.map(c=>{const w=cn.totalMXN? c.mxn/cn.totalMXN*100:0;
+    return `<div class="seg" style="width:${w}%;background:${CLASIF_COLOR[c.clasif]}"
+      title="${c.clasif}: ${fmtMXN(c.mxn)}">${w>7?fmtNum(c.pct)+'%':''}</div>`;}).join("");
+  const leg=cn.aprov.map(c=>`<span class="it"><span class="sw" style="background:${CLASIF_COLOR[c.clasif]}"></span>
+    ${c.clasif}: <b>${fmtMXN(c.mxn)}</b> (${fmtNum(c.pct)}%)</span>`).join("");
+  $("#aprovBar").innerHTML=`<div class="stackbar">${seg}</div><div class="stackleg">${leg}</div>`;
+  // Tabla por nivel.
+  const head=`<thead><tr><th>Nivel de uso</th><th>Clasificación</th><th class="num">Usuarios</th>
+    <th class="num">Costo anual (USD)</th><th class="num">Facturado (MXN)</th><th class="num">% del facturado</th></tr></thead>`;
+  const body=cn.niv.map(o=>`<tr>
+    <td><span class="pill ${NIVEL_CLS[o.nivel]}">${o.nivel}</span></td>
+    <td><span class="tag" style="border-color:${CLASIF_COLOR[o.clasif]};color:${CLASIF_COLOR[o.clasif]}">${o.clasif}</span></td>
+    <td class="num">${fmtInt(o.users)}</td><td class="num">${fmtMXN(o.usd)}</td>
+    <td class="num">${fmtMXN(o.mxn)}</td><td class="num">${fmtNum(o.pct)}%</td></tr>`).join("");
+  const total=`<tr class="total"><td>TOTAL</td><td></td><td class="num">${fmtInt(cn.totalUsers)}</td>
+    <td class="num">${fmtMXN(cn.totalUSD)}</td><td class="num">${fmtMXN(cn.totalMXN)}</td><td class="num">100%</td></tr>`;
+  $("#tblCostoNivel").innerHTML=head+"<tbody>"+body+total+"</tbody>";
+}
+
+/* Columnas: Facturado (MXN) por nivel de uso (color por nivel). */
+function costoNivelChart(host, cn){
+  host.innerHTML="";
+  const data=cn.niv;
+  const W=host.clientWidth||720, H=300, m={t:24,r:14,b:44,l:70};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  if(!data.length){ host.appendChild(svg); return; }
+  const maxY=niceMax(Math.max(1,...data.map(d=>d.mxn)));
+  const y=v=> m.t+ih-ih*(v/maxY);
+  const gap=iw/data.length, bw=gap*0.62;
+  for(let i=0;i<=4;i++){ const v=maxY*i/4, yy=y(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
+    svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, "$"+fmtInt(v)));
+  }
+  data.forEach((d,i)=>{
+    const cx=m.l+gap*i+gap/2, by=y(d.mxn), bh=ih-(by-m.t), bx=cx-bw/2;
+    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:nivelColor(d.nivel)});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.nivel} · ${d.clasif}</div>
+      <div class="tt-r"><span class="k">Facturado</span><b>${fmtMXN(d.mxn)}</b></div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">% del total</span><b>${fmtNum(d.pct)}%</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:cx,y:by-7,"text-anchor":"middle"}, fmtNum(d.pct)+"%"));
+    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, d.nivel.replace(/^\d\./,"")));
+  });
+  host.appendChild(svg);
 }
 
 /* Columnas: Presupuesto Ops (MXN) por fecha de asignación. */
@@ -976,20 +1112,23 @@ function renderAll(P){
   const teams=aggTeams(P.consol);
   const usoteam=aggUsoTeam(P.rows);
   const presupops=aggPresupOps(P.consol);
+  const costonivel=aggCostoNivel(P.rows);
   STATE.__niveles=niveles;
   lineChart($("#chVolum"), volum);
   columnChart($("#chNiveles"), niveles, onNivClick);
   barChart($("#chTeams"), teams, "mxn", fmtMXN);
   pctBarChart($("#chUsoTeam"), usoteam);
   presupOpsChart($("#chPresupOps"), presupops);
+  costoNivelChart($("#chCostoNivel"), costonivel);
   renderTeams(teams);
-  renderBaja(P.rows);
+  renderUsab(P.rows);
   renderPresupOps(presupops);
+  renderCostoNivel(costonivel);
   renderDet(P.rows);
   drawNivList();
   STATE.__redraw=()=>{ lineChart($("#chVolum"),volum); columnChart($("#chNiveles"),niveles,onNivClick);
     barChart($("#chTeams"),teams,"mxn",fmtMXN); pctBarChart($("#chUsoTeam"),usoteam);
-    presupOpsChart($("#chPresupOps"),presupops); };
+    presupOpsChart($("#chPresupOps"),presupops); costoNivelChart($("#chCostoNivel"),costonivel); };
 }
 
 function leerLibro(arrayBuffer){
@@ -1081,17 +1220,19 @@ function exportar(){
   const vol=aggVolumetria(STATE.consol).map(v=>({"Fecha de asignación":fmtDate(v.fecha),
     "Licencias en la fecha":v.lic,"Usuarios en la fecha":v.users,"Licencias acumuladas":v.licAcum,"Usuarios acumulados":v.usersAcum}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(vol), "Volumetría Licencias");
-  // Usabilidad baja (agrupada por User Team, con última conexión y días de uso)
-  const baja=STATE.rows.filter(r=>["4.Bajo","5.Nulo"].includes(r["Nivel de uso"]))
-    .sort((a,b)=> String(a["User Team"]).localeCompare(String(b["User Team"]))
-      || b["Nivel de uso"].localeCompare(a["Nivel de uso"]) || a["% de uso"]-b["% de uso"])
+  // Usabilidad de todos los usuarios (todos los niveles, para filtrar en Excel)
+  const usab=[...STATE.rows]
+    .sort((a,b)=> (NIVEL_ORDER.indexOf(a["Nivel de uso"])-NIVEL_ORDER.indexOf(b["Nivel de uso"]))
+      || String(a["User Team"]).localeCompare(String(b["User Team"])) || a["% de uso"]-b["% de uso"])
     .map(r=>({"User Team":r["User Team"],Nombre:r["Nombre"],Correo:r["Correo electrónico"],
       Nivel:r["Nivel de uso"],"% de uso":r["% de uso"],
       "Última conexión":r["Last Active"]?fmtDate(r["Last Active"]):"Sin registro",
       "Días desde últ. conexión":r["Días desde últ. conexión"],
       "Días activos":r["Days Active"],"Días hábiles":r["Días hábiles"],
       "Días sin uso":r["Días sin uso"],"Acción sugerida":r["Acción sugerida"]}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(baja), "Usabilidad Baja");
+  const wsUsab=XLSX.utils.json_to_sheet(usab);
+  wsUsab["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:usab.length,c:10}})};
+  XLSX.utils.book_append_sheet(wb, wsUsab, "Usabilidad Usuarios");
   // Resumen niveles
   const niv=aggNiveles(STATE.rows).map(n=>({"Nivel de uso":n.nivel,Usuarios:n.count,"% de uso promedio":Math.round(n.prom*10)/10}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(niv), "Resumen Niveles");
@@ -1099,6 +1240,19 @@ function exportar(){
   const ut=aggUsoTeam(STATE.rows).map(t=>({"User Team":t.team,Usuarios:t.users,
     "% de uso promedio":Math.round(t.prom*10)/10,"Días activos promedio":Math.round(t.daProm*10)/10}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ut), "% Uso por Team");
+  // Costo por nivel (ocioso vs productivo)
+  const cn=aggCostoNivel(STATE.rows);
+  const cnRows=cn.niv.map(o=>({"Nivel de uso":o.nivel,"Clasificación":o.clasif,Usuarios:o.users,
+    "Costo anual (USD)":Math.round(o.usd*100)/100,"Facturado (MXN)":Math.round(o.mxn*100)/100,
+    "% del facturado":Math.round(o.pct*10)/10}));
+  cnRows.push({"Nivel de uso":"TOTAL","Clasificación":"",Usuarios:cn.totalUsers,
+    "Costo anual (USD)":Math.round(cn.totalUSD*100)/100,"Facturado (MXN)":Math.round(cn.totalMXN*100)/100,"% del facturado":100});
+  cnRows.push({});
+  cnRows.push({"Nivel de uso":"RESUMEN DE APROVECHAMIENTO"});
+  cn.aprov.forEach(c=>cnRows.push({"Nivel de uso":c.clasif,"Clasificación":"",Usuarios:c.users,
+    "Costo anual (USD)":Math.round(c.usd*100)/100,"Facturado (MXN)":Math.round(c.mxn*100)/100,
+    "% del facturado":Math.round(c.pct*10)/10}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cnRows), "Costo por Nivel");
   // Consumo Presup. Ops (usuarios con Presupuesto Ops > 0, por fecha)
   const po=aggPresupOps(STATE.consol);
   const poRows=po.rows.map(r=>({"Fecha de asignación":fmtDate(r.fecha),Usuarios:r.users,
@@ -1119,7 +1273,7 @@ function exportar(){
 /* ---------- Wiring de eventos ---------- */
 $("#fileInput").addEventListener("change",e=>{ if(e.target.files[0]) manejarArchivo(e.target.files[0]); e.target.value=""; });
 $("#exportBtn").addEventListener("click", exportar);
-$("#bajaSearch").addEventListener("input", drawBaja);
+$("#bajaSearch").addEventListener("input", drawUsab);
 ["detSearch","detNivel","detTeam","detAccion"].forEach(id=>$("#"+id).addEventListener("input", drawDet));
 
 const dz=$("#dropzone");

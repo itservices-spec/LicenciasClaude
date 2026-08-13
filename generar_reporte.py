@@ -354,25 +354,86 @@ def volumetria_licencias(consol: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-def usabilidad_baja(final: pd.DataFrame) -> pd.DataFrame:
-    """Usuarios con usabilidad baja (Nivel Bajo o Nulo), agrupados por User Team.
+# Orden canónico de niveles y clasificación de aprovechamiento.
+NIVEL_ORDEN = ["1.Muy Alto", "2.Alto", "3.Medio", "4.Bajo", "5.Nulo", "Reciente"]
+CLASIF_NIVEL = {
+    "1.Muy Alto": "Productivo", "2.Alto": "Productivo", "3.Medio": "Productivo",
+    "4.Bajo": "Ocioso", "5.Nulo": "Ocioso", "Reciente": "En adopción",
+}
 
-    Incluye la última fecha de conexión y los días de uso frente a los días
-    laborales (hábiles) con la licencia asignada. Los usuarios "Reciente"
-    quedan fuera por no ser aún evaluables.
+
+def usabilidad_usuarios(final: pd.DataFrame) -> pd.DataFrame:
+    """Usabilidad de TODOS los usuarios (todos los niveles).
+
+    Tabla plana con la última conexión y los días de uso frente a los días
+    laborales (hábiles). Se ordena por nivel para permitir filtrar por uno o
+    varios niveles (autofiltro en Excel / filtros en el dashboard).
     """
-    mask = final["Nivel de uso"].isin(["4.Bajo", "5.Nulo"])
     cols = ["User Team", "Nombre", "Correo electrónico", "Nivel de uso",
             "% de uso", "Última conexión", "Días desde últ. conexión",
             "Días activos", "Días hábiles", "Días sin uso", "Acción sugerida"]
-    out = final.loc[mask].copy()
+    out = final.copy()
     out["Última conexión"] = out["Last Active"]
     out["Días activos"] = out["Days Active"]
-    out = out[cols].sort_values(
-        ["User Team", "Nivel de uso", "% de uso"],
-        ascending=[True, False, True]
-    ).reset_index(drop=True)
-    return out
+    out["_ord"] = out["Nivel de uso"].map({n: i for i, n in enumerate(NIVEL_ORDEN)})
+    out = out.sort_values(
+        ["_ord", "User Team", "% de uso"], ascending=[True, True, True]
+    )
+    return out[cols].reset_index(drop=True)
+
+
+def costo_por_nivel(final: pd.DataFrame) -> pd.DataFrame:
+    """Costo por nivel de uso, con clasificación de monto ocioso vs productivo.
+
+    Suma el Costo anual (USD) y el Facturado (MXN) por nivel y etiqueta cada
+    nivel como 'Productivo' (Muy Alto/Alto/Medio), 'Ocioso' (Bajo/Nulo) o
+    'En adopción' (Reciente).
+    """
+    g = (
+        final.groupby("Nivel de uso")
+        .agg(**{
+            "Usuarios": ("Correo electrónico", "count"),
+            "Costo anual (USD)": ("Costo anual (USD)", "sum"),
+            "Facturado (MXN)": ("Facturado (MXN)", "sum"),
+        })
+        .reset_index()
+    )
+    g["Clasificación"] = g["Nivel de uso"].map(CLASIF_NIVEL)
+    g["_ord"] = g["Nivel de uso"].map({n: i for i, n in enumerate(NIVEL_ORDEN)})
+    g = g.sort_values("_ord").drop(columns="_ord")
+    total_mxn = g["Facturado (MXN)"].sum()
+    g["% del facturado"] = (g["Facturado (MXN)"] / total_mxn * 100).round(1) \
+        if total_mxn else 0
+    g = g[["Nivel de uso", "Clasificación", "Usuarios",
+           "Costo anual (USD)", "Facturado (MXN)", "% del facturado"]]
+    total = pd.DataFrame([{
+        "Nivel de uso": "TOTAL", "Clasificación": "",
+        "Usuarios": g["Usuarios"].sum(),
+        "Costo anual (USD)": g["Costo anual (USD)"].sum(),
+        "Facturado (MXN)": g["Facturado (MXN)"].sum(),
+        "% del facturado": 100.0,
+    }])
+    return pd.concat([g, total], ignore_index=True)
+
+
+def resumen_aprovechamiento(costo_niv: pd.DataFrame) -> pd.DataFrame:
+    """Agrupa el facturado en Productivo / Ocioso / En adopción."""
+    base = costo_niv[costo_niv["Nivel de uso"] != "TOTAL"]
+    g = (
+        base.groupby("Clasificación")
+        .agg(**{
+            "Usuarios": ("Usuarios", "sum"),
+            "Facturado (MXN)": ("Facturado (MXN)", "sum"),
+            "Costo anual (USD)": ("Costo anual (USD)", "sum"),
+        })
+        .reset_index()
+    )
+    orden = {"Productivo": 0, "En adopción": 1, "Ocioso": 2}
+    g["_o"] = g["Clasificación"].map(orden)
+    g = g.sort_values("_o").drop(columns="_o").reset_index(drop=True)
+    total = g["Facturado (MXN)"].sum()
+    g["% del facturado"] = (g["Facturado (MXN)"] / total * 100).round(1) if total else 0
+    return g
 
 
 def monto_por_team(consol: pd.DataFrame) -> pd.DataFrame:
@@ -523,7 +584,8 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
 # --------------------------------------------------------------------------- #
 # 6. Exportación con formato
 # --------------------------------------------------------------------------- #
-def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_corte):
+def exportar(final, volum, usuarios_usab, montos, niveles, usoteam, presupops,
+             costo_niv, aprov, fecha_corte):
     print(f"\n[6] Exportando a: {ARCHIVO_SALIDA}")
     with pd.ExcelWriter(ARCHIVO_SALIDA, engine="xlsxwriter",
                         datetime_format="yyyy-mm-dd") as writer:
@@ -628,15 +690,19 @@ def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_cort
         chart.set_size({"width": 720, "height": 400})
         ws2.insert_chart(2, len(volum_out.columns) + 1, chart)
 
-        # ---------------- Hoja: Usabilidad Baja ----------------
-        hoja3 = "Usabilidad Baja"
-        baja.to_excel(writer, sheet_name=hoja3, startrow=2, index=False)
+        # ---------------- Hoja: Usabilidad Usuarios ----------------
+        # Todos los usuarios con autofiltro (permite filtrar por uno o varios
+        # niveles de usabilidad de forma nativa en Excel).
+        hoja3 = "Usabilidad Usuarios"
+        usuarios_usab.to_excel(writer, sheet_name=hoja3, startrow=2, index=False)
         ws3 = writer.sheets[hoja3]
-        ws3.write(0, 0, "Usuarios con usabilidad baja (Nivel Bajo / Nulo)", fmt_titulo)
-        for col, name in enumerate(baja.columns):
+        ws3.write(0, 0, "Usabilidad de todos los usuarios "
+                        "(filtra por nivel con el autofiltro)", fmt_titulo)
+        for col, name in enumerate(usuarios_usab.columns):
             ws3.write(2, col, name, fmt_hdr)
             ws3.set_column(col, col, max(len(str(name)) + 2, 16))
         ws3.freeze_panes(3, 0)
+        ws3.autofilter(2, 0, 2 + len(usuarios_usab), len(usuarios_usab.columns) - 1)
 
         # ---------------- Hoja: Resumen Niveles ----------------
         hoja5 = "Resumen Niveles"
@@ -680,6 +746,71 @@ def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_cort
         chart4.set_title({"name": "% de uso promedio por User Team"})
         chart4.set_size({"width": 720, "height": 420})
         ws6.insert_chart(2, len(usoteam.columns) + 1, chart4)
+
+        # ---------------- Hoja: Costo por Nivel (ocioso vs productivo) ------
+        hoja8 = "Costo por Nivel"
+        # Colores de clasificación.
+        col_prod = aprov.loc[aprov["Clasificación"] == "Productivo", "Facturado (MXN)"].sum()
+        col_ocio = aprov.loc[aprov["Clasificación"] == "Ocioso", "Facturado (MXN)"].sum()
+        col_adop = aprov.loc[aprov["Clasificación"] == "En adopción", "Facturado (MXN)"].sum()
+        costo_niv.to_excel(writer, sheet_name=hoja8, startrow=4, index=False)
+        ws8 = writer.sheets[hoja8]
+        ws8.write(0, 0, "Costo por nivel de uso — monto ocioso vs productivo", fmt_titulo)
+        ws8.write(1, 0, f"Productivo (Muy Alto/Alto/Medio): {col_prod:,.2f} MXN   |   "
+                        f"Ocioso (Bajo/Nulo): {col_ocio:,.2f} MXN   |   "
+                        f"En adopción (Reciente): {col_adop:,.2f} MXN", fmt_sub)
+        for col, name in enumerate(costo_niv.columns):
+            ws8.write(4, col, name, fmt_hdr)
+            ws8.set_column(col, col, max(len(str(name)) + 2, 16))
+        for cname in ["Costo anual (USD)", "Facturado (MXN)"]:
+            ci = list(costo_niv.columns).index(cname)
+            ws8.set_column(ci, ci, 18, fmt_money)
+        # Fila TOTAL: header en la fila 4, datos desde la 5; la última fila
+        # de datos (TOTAL) queda en 4 + len(costo_niv).
+        total_row8 = 4 + len(costo_niv)
+        for col in range(len(costo_niv.columns)):
+            ws8.write(total_row8, col, costo_niv.iloc[-1, col], fmt_total)
+        # Gráfico de columnas: Facturado (MXN) por nivel (sin TOTAL).
+        chart8 = wb.add_chart({"type": "column"})
+        nn8 = len(costo_niv) - 1  # excluye TOTAL
+        col_mxn8 = list(costo_niv.columns).index("Facturado (MXN)")
+        chart8.add_series({
+            "name": "Facturado (MXN)",
+            "categories": [hoja8, 5, 0, 4 + nn8, 0],
+            "values": [hoja8, 5, col_mxn8, 4 + nn8, col_mxn8],
+            "data_labels": {"value": True},
+            "points": [
+                {"fill": {"color": "#0ca30c"}}, {"fill": {"color": "#1baf7a"}},
+                {"fill": {"color": "#fab219"}}, {"fill": {"color": "#ec835a"}},
+                {"fill": {"color": "#d03b3b"}}, {"fill": {"color": "#64748b"}},
+            ],
+        })
+        chart8.set_title({"name": "Facturado (MXN) por nivel de uso"})
+        chart8.set_size({"width": 560, "height": 360})
+        ws8.insert_chart(4, len(costo_niv.columns) + 1, chart8)
+
+        # Tabla resumen de aprovechamiento + pastel productivo/ocioso.
+        rstart = total_row8 + 2
+        ws8.write(rstart - 1, 0, "Resumen de aprovechamiento", fmt_titulo)
+        aprov.to_excel(writer, sheet_name=hoja8, startrow=rstart, index=False)
+        for col, name in enumerate(aprov.columns):
+            ws8.write(rstart, col, name, fmt_hdr)
+        chart_pie = wb.add_chart({"type": "pie"})
+        na = len(aprov)
+        col_mxn_a = list(aprov.columns).index("Facturado (MXN)")
+        color_map = {"Productivo": "#0ca30c", "Ocioso": "#d03b3b", "En adopción": "#64748b"}
+        pts = [{"fill": {"color": color_map.get(c, "#4338CA")}}
+               for c in aprov["Clasificación"]]
+        chart_pie.add_series({
+            "name": "Facturado (MXN)",
+            "categories": [hoja8, rstart + 1, 0, rstart + na, 0],
+            "values": [hoja8, rstart + 1, col_mxn_a, rstart + na, col_mxn_a],
+            "points": pts,
+            "data_labels": {"percentage": True, "category": True},
+        })
+        chart_pie.set_title({"name": "Monto ocioso vs productivo (MXN)"})
+        chart_pie.set_size({"width": 460, "height": 340})
+        ws8.insert_chart(rstart, len(aprov.columns) + 1, chart_pie)
 
         # ---------------- Hoja: Consumo Presup. Ops ----------------
         hoja7 = "Consumo Presup. Ops"
@@ -751,8 +882,9 @@ def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_cort
         _hoja_detalle()
 
     print(f"    - Archivo generado con hojas: Volumetría Licencias, "
-          f"Usabilidad Baja, Resumen Niveles, % Uso por Team, "
-          f"Consumo Presup. Ops, Monto por User Team, Análisis Detallado.")
+          f"Usabilidad Usuarios, Resumen Niveles, % Uso por Team, "
+          f"Costo por Nivel, Consumo Presup. Ops, Monto por User Team, "
+          f"Análisis Detallado.")
 
 
 # --------------------------------------------------------------------------- #
@@ -771,16 +903,19 @@ def main():
 
     # Indicadores / secciones.
     volum = volumetria_licencias(consol)
-    baja = usabilidad_baja(final)
+    usuarios_usab = usabilidad_usuarios(final)
     montos = monto_por_team(consol)
     niveles = resumen_niveles(final)
     usoteam = uso_por_team(final)
     presupops = presupuesto_ops(consol)
+    costo_niv = costo_por_nivel(final)
+    aprov = resumen_aprovechamiento(costo_niv)
 
     verificar(final, consol, usab, fecha_corte)
     exportar(final.drop(columns=["email_key"], errors="ignore"),
              volum.drop(columns=["email_key"], errors="ignore"),
-             baja, montos, niveles, usoteam, presupops, fecha_corte)
+             usuarios_usab, montos, niveles, usoteam, presupops,
+             costo_niv, aprov, fecha_corte)
 
     print("\n✔ Proceso completado con éxito.")
 
