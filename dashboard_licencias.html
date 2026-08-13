@@ -1299,11 +1299,21 @@ function parseGviz(text, sheet){
 }
 async function fetchHoja(sheet){
   let res;
-  try{ res=await fetch(gvizUrl(sheet),{credentials:"omit"}); }
-  catch(err){ throw new Error(`No se pudo conectar con Google Drive (¿sin conexión o CORS?). ${err.message}`); }
-  if(!res.ok) throw new Error(`Google respondió ${res.status} al leer «${sheet}». `
-    +`Verifica que el archivo esté compartido como «Cualquiera con el enlace».`);
-  return parseGviz(await res.text(), sheet);
+  try{ res=await fetch(gvizUrl(sheet),{credentials:"omit",redirect:"follow"}); }
+  catch(err){
+    // TypeError = bloqueo por CORS o redirección a login (hoja no pública) o sin red.
+    const e=new Error(`El navegador bloqueó la lectura de «${sheet}» (CORS/red).`);
+    e.tipo="cors"; throw e;
+  }
+  if(!res.ok){ const e=new Error(`Google respondió HTTP ${res.status} al leer «${sheet}».`);
+    e.tipo="http"; throw e; }
+  const txt=await res.text();
+  // Si Google devuelve HTML (pantalla de acceso/login) en vez del JSON gviz.
+  if(!txt.includes("setResponse")){
+    const e=new Error(`«${sheet}» no devolvió datos (¿la hoja no es pública o el nombre de la pestaña no coincide?).`);
+    e.tipo="acceso"; throw e;
+  }
+  return parseGviz(txt, sheet);
 }
 async function actualizarDesdeGoogle(){
   $("#errBox").innerHTML="";
@@ -1319,9 +1329,20 @@ async function actualizarDesdeGoogle(){
     renderAll(P);
     guardarLocal(asig, usab);
   }catch(err){
-    $("#errBox").innerHTML=`<div class="err"><b>No se pudieron actualizar los datos desde Google Drive:</b><br>`
-      +`${err.message}<br><span class="muted">Sugerencia: abre el archivo en Google Sheets → Compartir → `
-      +`«Cualquiera con el enlace: Lector». También puedes usar el botón «Archivo» para cargar un .xlsx.</span></div>`;
+    const testUrl=gvizUrl(CFG.hojaAsig);
+    const esAcceso = err.tipo==="cors" || err.tipo==="acceso" || err.tipo==="http";
+    let ayuda="";
+    if(esAcceso){
+      ayuda=`<div style="margin-top:10px">Para que el navegador pueda leerlo, el archivo debe ser <b>público</b>. En un Workspace corporativo suele fallar porque el uso compartido queda restringido a la organización. Haz una de estas dos:
+        <ol style="margin:8px 0 0 18px; padding:0">
+          <li><b>Compartir como público:</b> en Google Sheets → <b>Compartir</b> → <i>Acceso general</i> → <b>«Cualquiera con el enlace»</b> (no «kio.tech con el enlace») → rol <b>Lector</b>.</li>
+          <li><b>O publicar en la web:</b> menú <b>Archivo → Compartir → Publicar en la web</b> → <i>Documento completo</i> → <b>Publicar</b>.</li>
+        </ol>
+        <div style="margin-top:8px">Prueba de acceso: abre <a href="${testUrl}" target="_blank" rel="noopener">este enlace</a> en una pestaña nueva. Si ves texto/JSON, ya es público; si te pide iniciar sesión, aún no lo es.</div></div>`;
+    }
+    $("#errBox").innerHTML=`<div class="err"><b>No se pudieron actualizar los datos desde Google Drive.</b><br>`
+      +`${err.message}${ayuda}`
+      +`<div class="muted" style="margin-top:8px">Mientras tanto, puedes usar el botón <b>«Archivo»</b> (arriba) para cargar el .xlsx.</div></div>`;
     console.error(err);
   }finally{
     btns.forEach((b,i)=>{ b.disabled=false; b.textContent=orig[i]; });
