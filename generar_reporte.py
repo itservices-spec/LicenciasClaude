@@ -171,18 +171,16 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
         )
         filas.append(base)
 
-    consol = pd.DataFrame(filas)
+    consol = pd.DataFrame(filas).reset_index(drop=True)
     print(f"    - Correos consolidados (upgrades): {n_consolidados}")
-    print(f"    - Asignación consolidada: {consol.shape[0]} filas "
+    print(f"    - Asignación consolidada (todos): {consol.shape[0]} filas "
           f"(antes {asig.shape[0]})")
-
-    # Se excluyen los registros sin licencia vigente (Cantidad lic = 0):
-    # no se muestran en ningún indicador.
-    antes = len(consol)
-    consol = consol[pd.to_numeric(consol["Cantidad lic"], errors="coerce").fillna(0) > 0] \
-        .reset_index(drop=True)
-    print(f"    - Registros excluidos por 'Cantidad lic' = 0: {antes - len(consol)}")
-    print(f"    - Asignación final (licencias vigentes): {consol.shape[0]} filas")
+    # Se devuelve el consolidado COMPLETO. El filtro de 'licencias vigentes'
+    # (Cantidad lic > 0) se aplica en main() sólo para las vistas de
+    # usabilidad; los indicadores de costo usan el total del proyecto.
+    n_sin_lic = int((pd.to_numeric(consol["Cantidad lic"], errors="coerce")
+                     .fillna(0) <= 0).sum())
+    print(f"    - Usuarios sin licencia vigente (Cantidad lic = 0): {n_sin_lic}")
     return consol
 
 
@@ -948,10 +946,16 @@ def main():
     ARCHIVO_ENTRADA_DEFAULT = ruta
 
     asig, usab = leer_hojas(ruta)
-    consol = consolidar_asignacion(asig)
-    df, fecha_corte = cruzar(consol, usab)
+    consol_full = consolidar_asignacion(asig)          # 86: todos los usuarios
+    df, fecha_corte = cruzar(consol_full, usab)
     calc = calcular(df, fecha_corte)
-    final = ordenar_columnas(calc)
+    final_full = ordenar_columnas(calc)                # master COMPLETO
+
+    # Master VIGENTE (Cantidad lic > 0) para las vistas de usabilidad.
+    vig = pd.to_numeric(final_full["Cantidad lic"], errors="coerce").fillna(0) > 0
+    final = final_full[vig].reset_index(drop=True)
+    consol = consol_full[pd.to_numeric(consol_full["Cantidad lic"],
+             errors="coerce").fillna(0) > 0].reset_index(drop=True)
 
     # Indicadores / secciones.
     volum = volumetria_licencias(consol)
@@ -960,7 +964,10 @@ def main():
     niveles = resumen_niveles(final)
     usoteam = uso_por_team(final)
     presupops = presupuesto_ops(consol)
-    costo_niv = costo_por_nivel(final)
+    # Costo por nivel: sobre el master COMPLETO para que el total sea
+    # consistente con el costo real del proyecto (incluye licencias de equipo
+    # sin usuario nombrado).
+    costo_niv = costo_por_nivel(final_full)
     aprov = resumen_aprovechamiento(costo_niv)
 
     verificar(final, consol, usab, fecha_corte)

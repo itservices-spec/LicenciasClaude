@@ -312,7 +312,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     <div class="section-title"><h2>Costo por nivel de uso</h2><span>monto ocioso vs. productivo</span></div>
     <section class="card">
       <h3>¿Cuánto cuesta cada nivel de uso?</h3>
-      <div class="csub">Facturado (MXN) por nivel y su clasificación: <b>productivo</b> (Muy Alto/Alto/Medio), <b>ocioso</b> (Bajo/Nulo) y <b>en adopción</b> (Reciente).</div>
+      <div class="csub">Costo total del proyecto por nivel (incluye licencias de equipo). Clasificación: <b>productivo</b> (Muy Alto/Alto/Medio), <b>ocioso</b> (Bajo/Nulo) y <b>en adopción</b> (Reciente).</div>
       <div class="kpis" id="aprovTiles" style="margin-bottom:16px"></div>
       <div class="chart-host" id="chCostoNivel"></div>
       <div class="csub" style="margin-top:6px">Distribución del facturado total</div>
@@ -480,11 +480,10 @@ function procesar(asigRows, usabRows){
     consol.push(base);
   }
 
-  /* Excluir registros sin licencia vigente (Cantidad lic = 0): no se
-     muestran en ningún indicador. */
-  const consolAll=consol.length, consolF=consol.filter(r=>num(r["Cantidad lic"])>0);
-  const nSinLic=consolAll-consolF.length;
-  consol.length=0; consol.push(...consolF);
+  /* Usuarios sin licencia vigente (Cantidad lic = 0): se excluyen de las
+     vistas de USABILIDAD, pero su costo sí cuenta en el total del proyecto
+     (indicadores de costo), por lo que se conserva el master completo. */
+  const nSinLic = consol.filter(r=>num(r["Cantidad lic"])<=0).length;
 
   /* --- Índice de usabilidad + fecha de corte --- */
   const usabIdx=new Map();
@@ -541,8 +540,13 @@ function procesar(asigRows, usabRows){
     filas.push(row);
   }
 
-  return {rows:filas, consol, corte, nConsol, nSinLic, asigRaw:asigRows, usaFechaAsig,
-          conUso:filas.filter(f=>f.__tieneUso).length};
+  // Master COMPLETO (86) y VIGENTE (85, Cantidad lic > 0 para usabilidad).
+  const rowsFull=filas;
+  const rows=filas.filter(r=>num(r["Cantidad lic"])>0);
+  const consolVig=consol.filter(r=>num(r["Cantidad lic"])>0);
+  return {rows, rowsFull, consol:consolVig, corte, nConsol, nSinLic,
+          asigRaw:asigRows, usaFechaAsig,
+          conUso:rows.filter(f=>f.__tieneUso).length};
 }
 
 /* Consumo de usuarios con Presupuesto Ops > 0, por fecha de asignación. */
@@ -1128,7 +1132,7 @@ function renderAll(P){
   const teams=aggTeams(P.asigRaw);
   const usoteam=aggUsoTeam(P.rows);
   const presupops=aggPresupOps(P.consol);
-  const costonivel=aggCostoNivel(P.rows);
+  const costonivel=aggCostoNivel(P.rowsFull);  // completo: total real del proyecto
   STATE.__niveles=niveles;
   lineChart($("#chVolum"), volum);
   columnChart($("#chNiveles"), niveles, onNivClick);
@@ -1257,7 +1261,7 @@ function exportar(){
     "% de uso promedio":Math.round(t.prom*10)/10,"Días activos promedio":Math.round(t.daProm*10)/10}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ut), "% Uso por Team");
   // Costo por nivel (ocioso vs productivo)
-  const cn=aggCostoNivel(STATE.rows);
+  const cn=aggCostoNivel(STATE.rowsFull);
   const cnRows=cn.niv.map(o=>({"Nivel de uso":o.nivel,"Clasificación":o.clasif,Usuarios:o.users,
     "Costo anual (USD)":Math.round(o.usd*100)/100,"Facturado (MXN)":Math.round(o.mxn*100)/100,
     "% del facturado":Math.round(o.pct*10)/10}));
