@@ -50,7 +50,8 @@ COLS_COSTOS = [
 #   - Montos: se SUMAN a lo largo de todos los registros del usuario.
 CAMPOS_ULTIMO = ["Centro de costos", "CeCo Team", "User Team",
                  "Licencia", "Uso", "Fecha"]
-COLS_SUMA = ["Facturado (USD)", "Facturado (MXN)", "Presupuesto Ops"]
+COLS_SUMA = ["Costo anual (USD)", "Facturado (USD)",
+             "Facturado (MXN)", "Presupuesto Ops"]
 
 # Métricas de usabilidad numéricas (para rellenar con 0 en el left join).
 METRICAS_NUM = [
@@ -124,9 +125,9 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
         # Regla:
         #   * Campos vigentes (Centro de costos, CeCo Team, User Team,
         #     Licencia, Uso, Fecha) -> del ÚLTIMO registro.
-        #   * Montos (Facturado USD, Facturado MXN, Presupuesto Ops) -> SUMA.
+        #   * Montos (Costo anual USD, Facturado USD, Facturado MXN,
+        #     Presupuesto Ops) -> SUMA de todos los registros del usuario.
         #   * Cantidad lic -> SUMA (para reflejar la licencia vigente).
-        #   * Costo anual (USD) -> del último registro (acorde a la Licencia).
         n_consolidados += 1
         base = g.iloc[-1].to_dict()  # último registro = estado vigente
 
@@ -505,8 +506,6 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
         "Un usuario 'Reciente' tiene 15+ días de licencia!"
 
     # Cuadre de costos: los campos que se SUMAN no deben alterar el total.
-    # (Costo anual (USD) ahora se toma del último registro, por lo que puede
-    #  diferir del original: se reporta como informativo, sin aserción.)
     orig = pd.read_excel(ARCHIVO_ENTRADA_DEFAULT, sheet_name=HOJA_ASIGNACION)
     orig.columns = [str(c).strip() for c in orig.columns]
     for c in COLS_SUMA + ["Cantidad lic"]:
@@ -515,10 +514,6 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
         estado = "OK" if abs(o - n) < 0.01 else "DIFERENCIA"
         print(f"      - {c} (suma): original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
         assert abs(o - n) < 0.01, f"El total de {c} cambió tras consolidar!"
-    o_ca = pd.to_numeric(orig["Costo anual (USD)"], errors="coerce").fillna(0).sum()
-    n_ca = pd.to_numeric(final["Costo anual (USD)"], errors="coerce").fillna(0).sum()
-    print(f"      - Costo anual (USD) (último registro, informativo): "
-          f"original={o_ca:,.2f} | resultante={n_ca:,.2f}")
 
     print(f"\n    Distribución por Nivel de uso:")
     print(final["Nivel de uso"].value_counts().sort_index().to_string())
