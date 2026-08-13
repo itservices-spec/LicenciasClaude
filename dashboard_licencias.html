@@ -205,8 +205,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   .niv-chips .chip{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:9px; padding:6px 10px; background:var(--surface-2); font-size:12px; min-width:150px}
   .niv-chips .chip b{font-size:12.5px}
   .niv-chips .chip span{color:var(--muted)}
+  /* Bloques de filtro con etiqueta */
+  .filter-block{display:flex; gap:10px; align-items:baseline; margin-bottom:9px}
+  .filter-lbl{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; min-width:48px; padding-top:5px}
   /* Filtro multi-nivel (chips seleccionables) */
-  .lvl-filter{display:flex; gap:7px; flex-wrap:wrap; align-items:center}
+  .lvl-filter{display:flex; gap:7px; flex-wrap:wrap; align-items:center; flex:1}
   .lvl-chip{display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:20px;
     border:1.5px solid var(--border-strong); background:var(--surface); color:var(--text-2);
     font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; transition:.12s}
@@ -299,10 +302,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       </div>
     </div>
 
-    <div class="section-title"><h2>Usabilidad de los usuarios</h2><span>filtra por uno o varios niveles</span></div>
+    <div class="section-title"><h2>Usabilidad de los usuarios</h2><span>filtra por nivel y por equipo</span></div>
     <section>
-      <div class="tbl-tools">
+      <div class="filter-block">
+        <span class="filter-lbl">Nivel</span>
         <div class="lvl-filter" id="usabLevels"></div>
+      </div>
+      <div class="filter-block">
+        <span class="filter-lbl">Equipo</span>
+        <div class="lvl-filter" id="usabTeams"></div>
+      </div>
+      <div class="tbl-tools">
         <input id="bajaSearch" type="search" placeholder="Buscar nombre, correo o equipo…">
         <span class="muted" id="bajaCount"></span>
       </div>
@@ -830,12 +840,16 @@ function renderKPIs(P){
   const promUso=usados.length? usados.reduce((s,r)=>s+r["% de uso"],0)/usados.length : 0;
   const sinUso=P.rows.length-P.conUso;
   const reasignar=P.rows.filter(r=>r["Acción sugerida"]==="Reasignar / cancelar").length;
+  // Monto ocioso (Bajo/Nulo) sobre el costo total del proyecto.
+  const cn=aggCostoNivel(P.rowsFull);
+  const ocioso=cn.aprov.find(c=>c.clasif==="Ocioso") || {mxn:0,pct:0,users:0};
   const items=[
     {l:"Usuarios (consolidados)", v:fmtInt(P.rows.length), f:`${P.nConsol} upgrade(s) consolidado(s)`, c:"--brand"},
     {l:"Licencias asignadas", v:fmtInt(totalLic), f:`${P.conUso} con datos de uso · ${sinUso} sin uso`, c:"--series-1"},
     {l:"Facturado total", v:fmtMXN(totalMXN), f:"MXN contable (todos los registros)", c:"--brand-2"},
+    {l:"Monto ocioso", v:fmtMXN(ocioso.mxn), f:`${fmtNum(ocioso.pct)}% del facturado · nivel Bajo/Nulo`, c:"--lvl-5"},
     {l:"% de uso promedio", v:fmtNum(promUso)+"%", f:"sobre usuarios con actividad", c:"--lvl-2"},
-    {l:"A reasignar / cancelar", v:fmtInt(reasignar), f:"usuarios en nivel Nulo", c:"--lvl-5"},
+    {l:"A reasignar / cancelar", v:fmtInt(reasignar), f:"usuarios en nivel Nulo", c:"--lvl-4"},
   ];
   $("#kpis").innerHTML=items.map(k=>`
     <div class="kpi">
@@ -869,16 +883,43 @@ function renderTeams(teams){
   $("#tblTeams").innerHTML=head+"<tbody>"+body+totalRow+"</tbody>";
 }
 
-// Tabla de usabilidad de TODOS los usuarios, con filtro multi-nivel.
+// Tabla de usabilidad de TODOS los usuarios, con filtros multi-nivel y multi-equipo.
 let USAB=[];
 let USAB_LEVELS=new Set(NIVEL_ORDER);  // niveles seleccionados (por defecto todos)
+let USAB_TEAMS=null;                   // equipos seleccionados (null = todos)
 function renderUsab(rows){
   USAB=[...rows].sort((a,b)=>
       (NIVEL_ORDER.indexOf(a["Nivel de uso"])-NIVEL_ORDER.indexOf(b["Nivel de uso"]))
       || String(a["User Team"]).localeCompare(String(b["User Team"]))
       || a["% de uso"]-b["% de uso"]);
+  USAB_TEAMS=new Set(USAB.map(r=>r["User Team"]??"—"));  // por defecto, todos
   drawLevelChips();
+  drawTeamChips();
   drawUsab();
+}
+function drawTeamChips(){
+  const counts={};
+  USAB.forEach(r=>{const t=r["User Team"]??"—"; counts[t]=(counts[t]||0)+1;});
+  const present=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||a.localeCompare(b));
+  const allOn=present.every(t=>USAB_TEAMS.has(t));
+  let html=`<span class="lvl-chip all ${allOn?'on':'off'}" data-team="__all"
+      style="${allOn?'background:var(--brand)':''}">Todos</span>`;
+  html+=present.map(t=>{
+    const on=USAB_TEAMS.has(t);
+    return `<span class="lvl-chip ${on?'on':'off'}" data-team="${t.replace(/"/g,'&quot;')}"
+        style="${on?'background:var(--brand-2)':''}">${t}
+        <span class="cnt">${counts[t]}</span></span>`;
+  }).join("");
+  const host=$("#usabTeams"); host.innerHTML=html;
+  host.querySelectorAll(".lvl-chip").forEach(ch=>ch.onclick=()=>{
+    const t=ch.dataset.team;
+    if(t==="__all"){
+      USAB_TEAMS = present.every(x=>USAB_TEAMS.has(x)) ? new Set() : new Set(present);
+    }else{
+      if(USAB_TEAMS.has(t)) USAB_TEAMS.delete(t); else USAB_TEAMS.add(t);
+    }
+    drawTeamChips(); drawUsab();
+  });
 }
 function drawLevelChips(){
   const counts={}; NIVEL_ORDER.forEach(n=>counts[n]=0);
@@ -909,6 +950,7 @@ function drawLevelChips(){
 function drawUsab(){
   const q=$("#bajaSearch").value.trim().toLowerCase();
   const f=USAB.filter(r=> USAB_LEVELS.has(r["Nivel de uso"])
+    && (!USAB_TEAMS || USAB_TEAMS.has(r["User Team"]??"—"))
     && (!q || [r["Nombre"],r["Correo electrónico"],r["User Team"]].join(" ").toLowerCase().includes(q)));
   const head=`<thead><tr><th>Nombre</th><th>Correo</th><th>User Team</th>
     <th>Nivel</th><th class="num">% uso</th><th class="num">Última conexión</th>
@@ -925,7 +967,7 @@ function drawUsab(){
       <td class="num">${fmtInt(r["Days Active"])}</td><td class="num">${fmtInt(r["Días hábiles"])}</td>
       <td class="num">${fmtInt(r["Días sin uso"])}</td>
       <td>${r["Acción sugerida"]}</td></tr>`).join("");
-  $("#tblBaja").innerHTML=head+"<tbody>"+(body||'<tr><td colspan="11" class="muted" style="text-align:center;padding:18px">Selecciona al menos un nivel</td></tr>')+"</tbody>";
+  $("#tblBaja").innerHTML=head+"<tbody>"+(body||'<tr><td colspan="11" class="muted" style="text-align:center;padding:18px">Selecciona al menos un nivel y un equipo</td></tr>')+"</tbody>";
   const nteams=new Set(f.map(r=>r["User Team"])).size;
   $("#bajaCount").textContent=`${f.length} usuario(s) · ${USAB_LEVELS.size} nivel(es) · ${nteams} equipo(s)`;
 }
