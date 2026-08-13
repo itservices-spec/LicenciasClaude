@@ -193,6 +193,8 @@ def clasifica_nivel(pct) -> str:
 
 
 def accion_sugerida(nivel: str, dias_sin_uso: float) -> str:
+    if nivel == "Reciente":
+        return "Seguimiento (reciente)"
     if nivel == "5.Nulo":
         return "Reasignar / cancelar"
     if nivel == "4.Bajo":
@@ -200,6 +202,11 @@ def accion_sugerida(nivel: str, dias_sin_uso: float) -> str:
     if pd.notna(dias_sin_uso) and dias_sin_uso > 21:
         return "Revisar (inactividad)"
     return "Mantener"
+
+
+# Días mínimos con la licencia asignada para poder evaluar el uso.
+# Por debajo de este umbral, un usuario "Nulo" se marca como "Reciente".
+DIAS_MIN_EVALUACION = 15
 
 
 def calcular(df: pd.DataFrame, fecha_corte: pd.Timestamp) -> pd.DataFrame:
@@ -231,6 +238,13 @@ def calcular(df: pd.DataFrame, fecha_corte: pd.Timestamp) -> pd.DataFrame:
 
     # Nivel de uso.
     d["Nivel de uso"] = d["% de uso"].apply(clasifica_nivel)
+    # Los usuarios "Nulo" con menos de DIAS_MIN_EVALUACION días de licencia
+    # asignada aún no son evaluables -> se marcan como "Reciente".
+    mask_reciente = (d["Nivel de uso"] == "5.Nulo") & \
+                    (d["Días calendario"] < DIAS_MIN_EVALUACION)
+    d.loc[mask_reciente, "Nivel de uso"] = "Reciente"
+    print(f"    - Usuarios marcados como 'Reciente' "
+          f"(< {DIAS_MIN_EVALUACION} días de licencia): {int(mask_reciente.sum())}")
 
     # Días sin uso: corte - Last Active; si Last Active vacío pero hay
     # registro de asignación, se usa Días calendario.
@@ -312,12 +326,22 @@ def volumetria_licencias(consol: pd.DataFrame) -> pd.DataFrame:
 
 
 def usabilidad_baja(final: pd.DataFrame) -> pd.DataFrame:
-    """Usuarios con usabilidad baja (Nivel Bajo o Nulo)."""
+    """Usuarios con usabilidad baja (Nivel Bajo o Nulo), agrupados por User Team.
+
+    Incluye la última fecha de conexión y los días de uso frente a los días
+    laborales (hábiles) con la licencia asignada. Los usuarios "Reciente"
+    quedan fuera por no ser aún evaluables.
+    """
     mask = final["Nivel de uso"].isin(["4.Bajo", "5.Nulo"])
-    cols = ["Nombre", "Correo electrónico", "User Team", "Nivel de uso",
-            "% de uso", "Días sin uso", "Acción sugerida"]
-    out = final.loc[mask, cols].sort_values(
-        ["Nivel de uso", "% de uso"], ascending=[False, True]
+    cols = ["User Team", "Nombre", "Correo electrónico", "Nivel de uso",
+            "% de uso", "Última conexión", "Días activos", "Días hábiles",
+            "Días sin uso", "Acción sugerida"]
+    out = final.loc[mask].copy()
+    out["Última conexión"] = out["Last Active"]
+    out["Días activos"] = out["Days Active"]
+    out = out[cols].sort_values(
+        ["User Team", "Nivel de uso", "% de uso"],
+        ascending=[True, False, True]
     ).reset_index(drop=True)
     return out
 
@@ -361,6 +385,23 @@ def resumen_niveles(final: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
+def uso_por_team(final: pd.DataFrame) -> pd.DataFrame:
+    """Promedio de % de uso por grupo (User Team)."""
+    g = (
+        final.groupby("User Team")
+        .agg(**{
+            "Usuarios": ("Correo electrónico", "count"),
+            "% de uso promedio": ("% de uso", "mean"),
+            "Días activos promedio": ("Days Active", "mean"),
+        })
+        .reset_index()
+        .sort_values("% de uso promedio", ascending=False)
+    )
+    g["% de uso promedio"] = g["% de uso promedio"].round(1)
+    g["Días activos promedio"] = g["Días activos promedio"].round(1)
+    return g
+
+
 # --------------------------------------------------------------------------- #
 # Verificación por consola
 # --------------------------------------------------------------------------- #
@@ -392,8 +433,12 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
     # Días hábiles nunca debe superar los calendario.
     assert (final["Días hábiles"] <= final["Días calendario"]).all(), \
         "Días hábiles > Días calendario!"
-    niveles_validos = {"1.Muy Alto", "2.Alto", "3.Medio", "4.Bajo", "5.Nulo"}
+    niveles_validos = {"1.Muy Alto", "2.Alto", "3.Medio", "4.Bajo", "5.Nulo", "Reciente"}
     assert set(final["Nivel de uso"]).issubset(niveles_validos), "Nivel inválido!"
+    # Ningún usuario "Reciente" debe tener 15+ días de licencia asignada.
+    rec = final["Nivel de uso"] == "Reciente"
+    assert (final.loc[rec, "Días calendario"] < DIAS_MIN_EVALUACION).all(), \
+        "Un usuario 'Reciente' tiene 15+ días de licencia!"
 
     # Cuadre de costos: la consolidación no debe alterar el total.
     orig = pd.read_excel(ARCHIVO_ENTRADA_DEFAULT, sheet_name=HOJA_ASIGNACION)
@@ -412,7 +457,7 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
 # --------------------------------------------------------------------------- #
 # 6. Exportación con formato
 # --------------------------------------------------------------------------- #
-def exportar(final, volum, baja, montos, niveles, fecha_corte):
+def exportar(final, volum, baja, montos, niveles, usoteam, fecha_corte):
     print(f"\n[6] Exportando a: {ARCHIVO_SALIDA}")
     with pd.ExcelWriter(ARCHIVO_SALIDA, engine="xlsxwriter",
                         datetime_format="yyyy-mm-dd") as writer:
@@ -579,9 +624,31 @@ def exportar(final, volum, baja, montos, niveles, fecha_corte):
         chart3.set_size({"width": 640, "height": 380})
         ws5.insert_chart(2, len(niveles.columns) + 1, chart3)
 
+        # ---------------- Hoja: % Uso por Team ----------------
+        hoja6 = "% Uso por Team"
+        usoteam.to_excel(writer, sheet_name=hoja6, startrow=2, index=False)
+        ws6 = writer.sheets[hoja6]
+        ws6.write(0, 0, "Promedio de % de uso por User Team", fmt_titulo)
+        for col, name in enumerate(usoteam.columns):
+            ws6.write(2, col, name, fmt_hdr)
+            ws6.set_column(col, col, max(len(str(name)) + 2, 20))
+        chart4 = wb.add_chart({"type": "bar"})
+        mm = len(usoteam)
+        col_pct = list(usoteam.columns).index("% de uso promedio")
+        chart4.add_series({
+            "name": "% de uso promedio",
+            "categories": [hoja6, 3, 0, 2 + mm, 0],
+            "values": [hoja6, 3, col_pct, 2 + mm, col_pct],
+            "fill": {"color": "#4338CA"},
+            "data_labels": {"value": True},
+        })
+        chart4.set_title({"name": "% de uso promedio por User Team"})
+        chart4.set_size({"width": 720, "height": 420})
+        ws6.insert_chart(2, len(usoteam.columns) + 1, chart4)
+
     print(f"    - Archivo generado con hojas: Análisis Detallado, "
           f"Volumetría Licencias, Usabilidad Baja, Monto por User Team, "
-          f"Resumen Niveles.")
+          f"Resumen Niveles, % Uso por Team.")
 
 
 # --------------------------------------------------------------------------- #
@@ -603,11 +670,12 @@ def main():
     baja = usabilidad_baja(final)
     montos = monto_por_team(consol)
     niveles = resumen_niveles(final)
+    usoteam = uso_por_team(final)
 
     verificar(final, consol, usab, fecha_corte)
     exportar(final.drop(columns=["email_key"], errors="ignore"),
              volum.drop(columns=["email_key"], errors="ignore"),
-             baja, montos, niveles, fecha_corte)
+             baja, montos, niveles, usoteam, fecha_corte)
 
     print("\n✔ Proceso completado con éxito.")
 

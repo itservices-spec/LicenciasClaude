@@ -41,6 +41,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     --series-1:#2a78d6; --series-3:#1baf7a;
     /* status / niveles ordenados (mejor -> peor) */
     --lvl-1:#0ca30c; --lvl-2:#1baf7a; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#d03b3b;
+    --lvl-rec:#64748b;
     --seq:#2a78d6;
     --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.10);
   }
@@ -53,7 +54,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       --brand:#8b83f0; --brand-2:#4fd1b8;
       --grid:#262723;
       --series-1:#3987e5; --series-3:#199e70;
-      --lvl-1:#0ca30c; --lvl-2:#199e70; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#e66767;
+      --lvl-1:#0ca30c; --lvl-2:#199e70; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#e66767; --lvl-rec:#94a3b8;
       --seq:#3987e5;
       --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.35);
     }
@@ -66,7 +67,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     --brand:#8b83f0; --brand-2:#4fd1b8;
     --grid:#262723;
     --series-1:#3987e5; --series-3:#199e70;
-    --lvl-1:#0ca30c; --lvl-2:#199e70; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#e66767;
+    --lvl-1:#0ca30c; --lvl-2:#199e70; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#e66767; --lvl-rec:#94a3b8;
     --seq:#3987e5;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.35);
   }
@@ -189,9 +190,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; color:#fff}
   .pill.l1{background:var(--lvl-1)} .pill.l2{background:var(--lvl-2)}
   .pill.l3{background:var(--lvl-3); color:#3a2c00} .pill.l4{background:var(--lvl-4); color:#3a1c00} .pill.l5{background:var(--lvl-5)}
+  .pill.lr{background:var(--lvl-rec)}
   .tag{display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; background:var(--surface-2); border:1px solid var(--border); color:var(--text-2)}
   tr.total td{font-weight:700; background:var(--surface-2); border-top:2px solid var(--border-strong)}
+  tr.grp td{font-weight:650; background:color-mix(in srgb,var(--brand) 8%,var(--surface)); color:var(--text); border-top:1px solid var(--border-strong); font-size:12px; letter-spacing:.01em}
   .muted{color:var(--muted)}
+  /* Panel de lista de usuarios por segmento de nivel (clic en gráfica) */
+  .niv-list{margin-top:12px; border-top:1px dashed var(--border-strong); padding-top:12px}
+  .niv-list.empty{display:none}
+  .niv-list .nl-head{display:flex; align-items:center; gap:9px; margin-bottom:9px; flex-wrap:wrap}
+  .niv-list .nl-head b{font-size:13px}
+  .niv-list .close{margin-left:auto}
+  .niv-chips{display:flex; flex-wrap:wrap; gap:7px; max-height:240px; overflow:auto}
+  .niv-chips .chip{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:9px; padding:6px 10px; background:var(--surface-2); font-size:12px; min-width:150px}
+  .niv-chips .chip b{font-size:12.5px}
+  .niv-chips .chip span{color:var(--muted)}
 
   #app{display:none}
   .footer-note{margin-top:40px; font-size:12px; color:var(--muted); text-align:center}
@@ -254,8 +267,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <div class="section-title"><h2>Nivel de uso</h2><span>distribución de usuarios</span></div>
         <section class="card">
           <h3>Usuarios por nivel de uso</h3>
-          <div class="csub">Según % de uso = días activos / días hábiles.</div>
+          <div class="csub">Según % de uso = días activos / días hábiles. <b>Haz clic</b> en una barra para ver la lista de usuarios.</div>
           <div class="chart-host" id="chNiveles"></div>
+          <div class="niv-list empty" id="nivList"></div>
         </section>
       </div>
       <div>
@@ -267,6 +281,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         </section>
       </div>
     </div>
+
+    <div class="section-title"><h2>Promedio de % de uso por grupo</h2><span>User Team</span></div>
+    <section class="card">
+      <h3>% de uso promedio por User Team</h3>
+      <div class="csub">Intensidad de adopción por equipo. La línea punteada marca el 100% (uso diario en días hábiles).</div>
+      <div class="chart-host" id="chUsoTeam"></div>
+    </section>
 
     <div class="section-title"><h2>Monto por grupo (User Team)</h2><span>detalle de costos</span></div>
     <section class="tbl-wrap"><table id="tblTeams"></table></section>
@@ -364,12 +385,17 @@ function nivelUso(pct){
   return "5.Nulo";
 }
 function accionSugerida(nivel,diasSinUso){
+  if(nivel==="Reciente") return "Seguimiento (reciente)";
   if(nivel==="5.Nulo") return "Reasignar / cancelar";
   if(nivel==="4.Bajo") return "Revisar";
   if(diasSinUso!=null && diasSinUso>21) return "Revisar (inactividad)";
   return "Mantener";
 }
-const NIVEL_CLS = {"1.Muy Alto":"l1","2.Alto":"l2","3.Medio":"l3","4.Bajo":"l4","5.Nulo":"l5"};
+// Días mínimos con licencia asignada para poder evaluar el uso; por debajo,
+// un usuario "Nulo" se reclasifica como "Reciente".
+const DIAS_MIN_EVALUACION = 15;
+const NIVEL_CLS = {"1.Muy Alto":"l1","2.Alto":"l2","3.Medio":"l3","4.Bajo":"l4","5.Nulo":"l5","Reciente":"lr"};
+const NIVEL_ORDER = ["1.Muy Alto","2.Alto","3.Medio","4.Bajo","5.Nulo","Reciente"];
 
 /* ===================================================================== *
  *  Núcleo de procesamiento (equivalente al pipeline de Python)
@@ -436,7 +462,10 @@ function procesar(asigRows, usabRows){
     // % de uso
     const pct = dhab>0 ? (row["Days Active"]/dhab)*100 : 0;
     row["% de uso"]=Math.round(pct*10)/10;
-    row["Nivel de uso"]=nivelUso(row["% de uso"]);
+    let nivel=nivelUso(row["% de uso"]);
+    // "Nulo" con menos de 15 días de licencia -> aún no evaluable -> "Reciente"
+    if(nivel==="5.Nulo" && dcal<DIAS_MIN_EVALUACION) nivel="Reciente";
+    row["Nivel de uso"]=nivel;
 
     // Días sin uso
     let dsu;
@@ -477,10 +506,20 @@ function aggVolumetria(consol){
     return {fecha:o.fecha, lic:o.lic, users:o.users.size, licAcum:cl, usersAcum:cu}; });
 }
 function aggNiveles(rows){
-  const order=["1.Muy Alto","2.Alto","3.Medio","4.Bajo","5.Nulo"];
-  const m=new Map(order.map(o=>[o,{nivel:o,count:0,sum:0}]));
+  const m=new Map(NIVEL_ORDER.map(o=>[o,{nivel:o,count:0,sum:0}]));
   for(const r of rows){ const o=m.get(r["Nivel de uso"]); if(o){o.count++; o.sum+=r["% de uso"];} }
-  return order.map(o=>{const x=m.get(o); return {nivel:o,count:x.count,prom:x.count?x.sum/x.count:0};});
+  return NIVEL_ORDER.map(o=>{const x=m.get(o); return {nivel:o,count:x.count,prom:x.count?x.sum/x.count:0};});
+}
+function aggUsoTeam(rows){
+  const m=new Map();
+  for(const r of rows){
+    const t=r["User Team"] ?? "—";
+    const o=m.get(t) || {team:t, n:0, sum:0, da:0};
+    o.n++; o.sum+=r["% de uso"]; o.da+=r["Days Active"];
+    m.set(t,o);
+  }
+  return [...m.values()].map(o=>({team:o.team, users:o.n, prom:o.sum/o.n, daProm:o.da/o.n}))
+    .sort((a,b)=>b.prom-a.prom);
 }
 function aggTeams(consol){
   const m=new Map();
@@ -583,31 +622,43 @@ function lineChart(host, data){
   host.appendChild(svg);
 }
 
-/* Columnas verticales (niveles) con etiqueta y color por nivel */
-function columnChart(host, data){
+/* Color CSS por nivel (soporta "Reciente"). */
+function nivelColor(nivel){
+  const cls=NIVEL_CLS[nivel];
+  return cls==="lr" ? cssv("--lvl-rec") : cssv("--lvl-"+cls.slice(1));
+}
+/* Columnas verticales (niveles) — clic en cada barra dispara onClick(nivel). */
+function columnChart(host, data, onClick){
   host.innerHTML="";
-  const W=host.clientWidth||420, H=300;
-  const m={t:24,r:12,b:44,l:40};
+  const W=host.clientWidth||460, H=300;
+  const m={t:24,r:12,b:52,l:40};
   const iw=W-m.l-m.r, ih=H-m.t-m.b;
   const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
   const maxY=niceMax(Math.max(1,...data.map(d=>d.count)));
   const y=v=> m.t+ih-ih*(v/maxY);
-  const bw=iw/data.length*0.62, gap=iw/data.length;
+  const bw=iw/data.length*0.64, gap=iw/data.length;
   for(let i=0;i<=4;i++){ const v=maxY*i/4, yy=y(v);
     svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
     svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, fmtInt(v)));
   }
   data.forEach((d,i)=>{
     const cx=m.l+gap*i+gap/2, bh=ih-(y(d.count)-m.t), bx=cx-bw/2, by=y(d.count);
-    const color=cssv("--lvl-"+(i+1));
-    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:color});
+    const color=nivelColor(d.nivel);
+    const sel = SEL_NIVEL===d.nivel;
+    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:color,
+      style:"cursor:pointer",opacity: (SEL_NIVEL&&!sel)?0.45:1});
+    if(sel) rect.setAttribute("stroke", cssv("--text")), rect.setAttribute("stroke-width","2");
     rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.nivel}</div>
       <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.count)}</b></div>
-      <div class="tt-r"><span class="k">% uso prom.</span><b>${fmtNum(d.prom)}%</b></div>`,ev));
+      <div class="tt-r"><span class="k">% uso prom.</span><b>${fmtNum(d.prom)}%</b></div>
+      <div class="tt-r"><span class="k muted">clic para ver la lista</span></div>`,ev));
     rect.addEventListener("mouseleave",hideTT);
+    if(onClick) rect.addEventListener("click",()=>onClick(d.nivel));
     svg.appendChild(rect);
     svg.appendChild(el("text",{class:"lbl",x:cx,y:by-7,"text-anchor":"middle"}, fmtInt(d.count)));
-    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, d.nivel.replace(/^\d\./,"")));
+    // etiqueta de nivel (2 líneas: número/nombre)
+    const lbl=d.nivel.replace(/^\d\./,"");
+    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, lbl));
   });
   host.appendChild(svg);
 }
@@ -634,6 +685,38 @@ function barChart(host, data, valKey, fmtFn){
     rect.addEventListener("mouseleave",hideTT);
     svg.appendChild(rect);
     svg.appendChild(el("text",{class:"lbl",x:m.l+bw+6,y:y+rowH/2,"dominant-baseline":"middle"}, fmtFn(d[valKey])));
+  });
+  host.appendChild(svg);
+}
+
+/* Barras horizontales: promedio de % de uso por User Team. */
+function pctBarChart(host, data){
+  host.innerHTML="";
+  const rows=data.slice(0,14);
+  const W=host.clientWidth||460, rowH=26, H=rows.length*rowH+34;
+  const m={t:8,r:44,b:22,l:120};
+  const iw=W-m.l-m.r;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  const maxV=Math.max(100,...rows.map(d=>d.prom)); // referencia mínima 100%
+  // línea de referencia 100%
+  const x100=m.l+iw*(100/maxV);
+  svg.appendChild(el("line",{x1:x100,y1:m.t-2,x2:x100,y2:m.t+rows.length*rowH,
+    stroke:cssv("--border-strong"),"stroke-dasharray":"3 3"}));
+  svg.appendChild(el("text",{x:x100,y:H-6,"text-anchor":"middle"},"100%"));
+  rows.forEach((d,i)=>{
+    const y=m.t+i*rowH, bw=iw*(Math.min(d.prom,maxV)/maxV);
+    // color según nivel promedio (semáforo)
+    const color=nivelColor(nivelUso(d.prom));
+    svg.appendChild(el("text",{x:m.l-8,y:y+rowH/2,"text-anchor":"end","dominant-baseline":"middle"},
+      d.team.length>17?d.team.slice(0,16)+"…":d.team));
+    const rect=el("rect",{x:m.l,y:y+4,width:Math.max(1,bw),height:rowH-10,rx:4,fill:color});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.team}</div>
+      <div class="tt-r"><span class="k">% de uso prom.</span><b>${fmtNum(d.prom)}%</b></div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">Días activos prom.</span><b>${fmtNum(d.daProm)}</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:m.l+bw+6,y:y+rowH/2,"dominant-baseline":"middle"}, fmtNum(d.prom)+"%"));
   });
   host.appendChild(svg);
 }
@@ -684,22 +767,36 @@ function renderTeams(teams){
 
 let BAJA=[];
 function renderBaja(rows){
+  // Solo Bajo/Nulo (los "Reciente" no son evaluables); agrupado por User Team.
   BAJA=rows.filter(r=>r["Nivel de uso"]==="4.Bajo"||r["Nivel de uso"]==="5.Nulo")
-    .sort((a,b)=> (b["Nivel de uso"]).localeCompare(a["Nivel de uso"]) || a["% de uso"]-b["% de uso"]);
+    .sort((a,b)=> String(a["User Team"]).localeCompare(String(b["User Team"]))
+      || (b["Nivel de uso"]).localeCompare(a["Nivel de uso"]) || a["% de uso"]-b["% de uso"]);
   drawBaja();
 }
 function drawBaja(){
   const q=$("#bajaSearch").value.trim().toLowerCase();
   const f=BAJA.filter(r=>!q || [r["Nombre"],r["Correo electrónico"],r["User Team"]].join(" ").toLowerCase().includes(q));
-  const head=`<thead><tr><th>Nombre</th><th>Correo</th><th>User Team</th>
-    <th>Nivel</th><th class="num">% uso</th><th class="num">Días sin uso</th><th>Acción sugerida</th></tr></thead>`;
-  const body=f.map(r=>`<tr>
-    <td>${r["Nombre"]??""}</td><td>${r["Correo electrónico"]??""}</td><td><span class="tag">${r["User Team"]??""}</span></td>
-    <td><span class="pill ${NIVEL_CLS[r["Nivel de uso"]]}">${r["Nivel de uso"]}</span></td>
-    <td class="num">${fmtNum(r["% de uso"])}</td><td class="num">${fmtInt(r["Días sin uso"])}</td>
-    <td>${r["Acción sugerida"]}</td></tr>`).join("");
+  const head=`<thead><tr><th>Nombre</th><th>Correo</th>
+    <th>Nivel</th><th class="num">% uso</th><th class="num">Última conexión</th>
+    <th class="num">Días activos</th><th class="num">Días hábiles</th>
+    <th class="num">Días sin uso</th><th>Acción sugerida</th></tr></thead>`;
+  // Agrupación por User Team con fila-encabezado por grupo.
+  const groups=new Map();
+  for(const r of f){ const t=r["User Team"]??"—"; (groups.get(t)||groups.set(t,[]).get(t)).push(r); }
+  let body="";
+  for(const [team,rs] of groups){
+    body+=`<tr class="grp"><td colspan="9">${team} · ${rs.length} usuario(s)</td></tr>`;
+    body+=rs.map(r=>`<tr>
+      <td>${r["Nombre"]??""}</td><td>${r["Correo electrónico"]??""}</td>
+      <td><span class="pill ${NIVEL_CLS[r["Nivel de uso"]]}">${r["Nivel de uso"]}</span></td>
+      <td class="num">${fmtNum(r["% de uso"])}</td>
+      <td class="num">${r["Last Active"]?fmtDate(r["Last Active"]):'<span class="muted">Sin registro</span>'}</td>
+      <td class="num">${fmtInt(r["Days Active"])}</td><td class="num">${fmtInt(r["Días hábiles"])}</td>
+      <td class="num">${fmtInt(r["Días sin uso"])}</td>
+      <td>${r["Acción sugerida"]}</td></tr>`).join("");
+  }
   $("#tblBaja").innerHTML=head+"<tbody>"+body+"</tbody>";
-  $("#bajaCount").textContent=`${f.length} usuario(s)`;
+  $("#bajaCount").textContent=`${f.length} usuario(s) en ${groups.size} equipo(s)`;
 }
 
 const DET_COLS=[
@@ -759,9 +856,35 @@ function drawDet(){
  *  Orquestación: estado, render global, persistencia, IO
  * ===================================================================== */
 let STATE=null;
+let SEL_NIVEL=null;  // segmento de nivel seleccionado en la gráfica (clic)
+
+/* Lista de usuarios del nivel seleccionado, bajo la gráfica de niveles. */
+function drawNivList(){
+  const host=$("#nivList");
+  if(!SEL_NIVEL){ host.className="niv-list empty"; host.innerHTML=""; return; }
+  const us=STATE.rows.filter(r=>r["Nivel de uso"]===SEL_NIVEL)
+    .sort((a,b)=>a["% de uso"]-b["% de uso"]);
+  host.className="niv-list";
+  const chips=us.map(r=>`<div class="chip">
+      <b>${r["Nombre"]??"—"}</b>
+      <span>${r["Correo electrónico"]??""}</span>
+      <span>${r["User Team"]??""} · ${fmtNum(r["% de uso"])}% uso</span>
+    </div>`).join("");
+  host.innerHTML=`<div class="nl-head">
+      <span class="pill ${NIVEL_CLS[SEL_NIVEL]}">${SEL_NIVEL}</span>
+      <b>${us.length} usuario(s)</b>
+      <button class="btn ghost close" id="nivClose">✕ Cerrar</button>
+    </div><div class="niv-chips">${chips||'<span class="muted">Sin usuarios</span>'}</div>`;
+  $("#nivClose").onclick=()=>{ SEL_NIVEL=null; drawNivList(); columnChart($("#chNiveles"), STATE.__niveles, onNivClick); };
+}
+function onNivClick(nivel){
+  SEL_NIVEL = (SEL_NIVEL===nivel)? null : nivel;
+  drawNivList();
+  columnChart($("#chNiveles"), STATE.__niveles, onNivClick);
+}
 
 function renderAll(P){
-  STATE=P; window.STATE=P;
+  STATE=P; window.STATE=P; SEL_NIVEL=null;
   $("#dropzone").style.display="none";
   $("#app").style.display="block";
   $("#cutBox").hidden=false;
@@ -772,13 +895,18 @@ function renderAll(P){
   const volum=aggVolumetria(P.consol);
   const niveles=aggNiveles(P.rows);
   const teams=aggTeams(P.consol);
+  const usoteam=aggUsoTeam(P.rows);
+  STATE.__niveles=niveles;
   lineChart($("#chVolum"), volum);
-  columnChart($("#chNiveles"), niveles);
+  columnChart($("#chNiveles"), niveles, onNivClick);
   barChart($("#chTeams"), teams, "mxn", fmtMXN);
+  pctBarChart($("#chUsoTeam"), usoteam);
   renderTeams(teams);
   renderBaja(P.rows);
   renderDet(P.rows);
-  STATE.__redraw=()=>{ lineChart($("#chVolum"),volum); columnChart($("#chNiveles"),niveles); barChart($("#chTeams"),teams,"mxn",fmtMXN); };
+  drawNivList();
+  STATE.__redraw=()=>{ lineChart($("#chVolum"),volum); columnChart($("#chNiveles"),niveles,onNivClick);
+    barChart($("#chTeams"),teams,"mxn",fmtMXN); pctBarChart($("#chUsoTeam"),usoteam); };
 }
 
 function leerLibro(arrayBuffer){
@@ -870,10 +998,15 @@ function exportar(){
   const vol=aggVolumetria(STATE.consol).map(v=>({"Fecha de asignación":fmtDate(v.fecha),
     "Licencias en la fecha":v.lic,"Usuarios en la fecha":v.users,"Licencias acumuladas":v.licAcum,"Usuarios acumulados":v.usersAcum}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(vol), "Volumetría Licencias");
-  // Usabilidad baja
+  // Usabilidad baja (agrupada por User Team, con última conexión y días de uso)
   const baja=STATE.rows.filter(r=>["4.Bajo","5.Nulo"].includes(r["Nivel de uso"]))
-    .map(r=>({Nombre:r["Nombre"],Correo:r["Correo electrónico"],"User Team":r["User Team"],
-      Nivel:r["Nivel de uso"],"% de uso":r["% de uso"],"Días sin uso":r["Días sin uso"],"Acción sugerida":r["Acción sugerida"]}));
+    .sort((a,b)=> String(a["User Team"]).localeCompare(String(b["User Team"]))
+      || b["Nivel de uso"].localeCompare(a["Nivel de uso"]) || a["% de uso"]-b["% de uso"])
+    .map(r=>({"User Team":r["User Team"],Nombre:r["Nombre"],Correo:r["Correo electrónico"],
+      Nivel:r["Nivel de uso"],"% de uso":r["% de uso"],
+      "Última conexión":r["Last Active"]?fmtDate(r["Last Active"]):"Sin registro",
+      "Días activos":r["Days Active"],"Días hábiles":r["Días hábiles"],
+      "Días sin uso":r["Días sin uso"],"Acción sugerida":r["Acción sugerida"]}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(baja), "Usabilidad Baja");
   // Monto por team
   const teams=aggTeams(STATE.consol).map(t=>({"User Team":t.team,Usuarios:t.users,Licencias:t.lic,
@@ -882,6 +1015,10 @@ function exportar(){
   // Resumen niveles
   const niv=aggNiveles(STATE.rows).map(n=>({"Nivel de uso":n.nivel,Usuarios:n.count,"% de uso promedio":Math.round(n.prom*10)/10}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(niv), "Resumen Niveles");
+  // % de uso por team
+  const ut=aggUsoTeam(STATE.rows).map(t=>({"User Team":t.team,Usuarios:t.users,
+    "% de uso promedio":Math.round(t.prom*10)/10,"Días activos promedio":Math.round(t.daProm*10)/10}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ut), "% Uso por Team");
 
   XLSX.writeFile(wb, "Analisis_Usabilidad_Final.xlsx");
 }
