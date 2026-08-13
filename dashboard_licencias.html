@@ -238,7 +238,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     <div class="logo">✦</div>
     <div>
       <h1>Dashboard de Usabilidad · Licencias Claude</h1>
-      <div class="sub">Integración Asignación × Usabilidad — carga y actualización recurrente</div>
+      <div class="sub">Datos desde Google Drive · Asignación × Usabilidad</div>
     </div>
   </div>
   <div class="cut" id="cutBox" hidden>
@@ -247,8 +247,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   </div>
   <button class="btn" id="themeBtn" title="Cambiar tema">◐ Tema</button>
   <button class="btn" id="exportBtn" disabled>⬇ Exportar Excel</button>
-  <label class="btn primary" for="fileInput">⬆ Cargar / actualizar datos</label>
+  <label class="btn ghost" for="fileInput" title="Cargar un archivo .xlsx (alternativa)">⬆ Archivo</label>
   <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
+  <button class="btn primary" id="updateBtn" title="Leer los datos desde Google Drive">⟳ Actualizar datos</button>
 </header>
 
 <div class="wrap">
@@ -256,11 +257,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   <!-- Empty state / dropzone -->
   <div id="dropzone" class="drop">
     <div class="icon">📊</div>
-    <h2>Carga el archivo de licencias</h2>
-    <p>Arrastra aquí el archivo <b>.xlsx</b> con las pestañas <b>«Asignación»</b> y <b>«Usabilidad»</b>,
-       o usa el botón <b>«Cargar / actualizar datos»</b>.</p>
-    <p class="hint">El procesamiento ocurre 100% en tu navegador. Los datos se guardan localmente para
-       recargarse al volver, y puedes volver a subir un archivo actualizado cuando quieras.</p>
+    <h2>Actualiza los datos de licencias</h2>
+    <p>Pulsa <b>«Actualizar datos»</b> para leer la información directamente desde el
+       archivo en <b>Google Drive</b>.</p>
+    <p style="margin:16px 0"><button class="btn primary" id="updateBtnBig">⟳ Actualizar datos desde Google Drive</button></p>
+    <p class="hint">El procesamiento ocurre 100% en tu navegador. También puedes arrastrar aquí un
+       archivo <b>.xlsx</b> (pestañas «Asignación» y «Usabilidad») como alternativa. Los datos se
+       guardan localmente para recargarse al volver.</p>
   </div>
 
   <div id="errBox"></div>
@@ -375,6 +378,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 const CFG = {
   hojaAsig: "Asignación",
   hojaUsab: "Usabilidad",
+  // Origen de datos en Google Drive (Google Sheets).
+  gsheetId: "1cOWmPdBQfBccLLiJDuimDtJJiG031529-kYRLjBbDX8",
   rankLic: {premium:3, pro:2, standard:1},
   colsCostos: ["Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops","Cantidad lic"],
   // Montos que se SUMAN al consolidar varios registros de un usuario.
@@ -1262,6 +1267,67 @@ function manejarArchivo(file){
   reader.readAsArrayBuffer(file);
 }
 
+/* ---------- Lectura desde Google Drive (Google Sheets vía gviz) ---------- */
+function gvizUrl(sheet){
+  return `https://docs.google.com/spreadsheets/d/${CFG.gsheetId}/gviz/tq`
+    + `?tqx=out:json&headers=1&sheet=${encodeURIComponent(sheet)}`;
+}
+// Convierte la respuesta gviz (JSONP) en un arreglo de objetos {columna: valor}.
+function parseGviz(text, sheet){
+  const s=text.indexOf("{"), e=text.lastIndexOf("}");
+  if(s<0||e<0) throw new Error(`Respuesta inesperada de Google para «${sheet}».`);
+  const j=JSON.parse(text.slice(s,e+1));
+  if(j.status==="error"){
+    const msg=(j.errors||[]).map(x=>x.detailed_message||x.message).join("; ");
+    throw new Error(`Google no pudo leer «${sheet}»: ${msg||"acceso denegado"}.`);
+  }
+  const cols=(j.table.cols||[]).map(c=>String(c.label||"").trim());
+  const dateRe=/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)$/;
+  return (j.table.rows||[]).map(r=>{
+    const o={};
+    (r.c||[]).forEach((cell,i)=>{
+      const key=cols[i]; if(!key) return;
+      let v = cell ? cell.v : null;
+      if(typeof v==="string"){
+        const m=v.match(dateRe);
+        if(m) v=new Date(+m[1],+m[2],+m[3],+(m[4]||0),+(m[5]||0),+(m[6]||0));
+      }
+      o[key]=v;
+    });
+    return o;
+  }).filter(o=>Object.values(o).some(v=>v!=null && v!==""));
+}
+async function fetchHoja(sheet){
+  let res;
+  try{ res=await fetch(gvizUrl(sheet),{credentials:"omit"}); }
+  catch(err){ throw new Error(`No se pudo conectar con Google Drive (¿sin conexión o CORS?). ${err.message}`); }
+  if(!res.ok) throw new Error(`Google respondió ${res.status} al leer «${sheet}». `
+    +`Verifica que el archivo esté compartido como «Cualquiera con el enlace».`);
+  return parseGviz(await res.text(), sheet);
+}
+async function actualizarDesdeGoogle(){
+  $("#errBox").innerHTML="";
+  const btns=[...document.querySelectorAll("#updateBtn,#updateBtnBig")];
+  const orig=btns.map(b=>b.textContent);
+  btns.forEach(b=>{ b.disabled=true; b.textContent="⟳ Actualizando…"; });
+  try{
+    const [asig, usab]=await Promise.all([fetchHoja(CFG.hojaAsig), fetchHoja(CFG.hojaUsab)]);
+    if(!asig.length) throw new Error("La pestaña «Asignación» está vacía.");
+    if(!asig[0].hasOwnProperty("Correo electrónico")) throw new Error("«Asignación» no tiene la columna «Correo electrónico».");
+    if(!usab.length || !usab[0].hasOwnProperty("Email")) throw new Error("«Usabilidad» no tiene la columna «Email».");
+    const P=procesar(asig, usab);
+    renderAll(P);
+    guardarLocal(asig, usab);
+  }catch(err){
+    $("#errBox").innerHTML=`<div class="err"><b>No se pudieron actualizar los datos desde Google Drive:</b><br>`
+      +`${err.message}<br><span class="muted">Sugerencia: abre el archivo en Google Sheets → Compartir → `
+      +`«Cualquiera con el enlace: Lector». También puedes usar el botón «Archivo» para cargar un .xlsx.</span></div>`;
+    console.error(err);
+  }finally{
+    btns.forEach((b,i)=>{ b.disabled=false; b.textContent=orig[i]; });
+  }
+}
+
 /* ---------- Exportación a Excel del resultado procesado ---------- */
 function exportar(){
   if(!STATE) return;
@@ -1339,6 +1405,8 @@ function exportar(){
 /* ---------- Wiring de eventos ---------- */
 $("#fileInput").addEventListener("change",e=>{ if(e.target.files[0]) manejarArchivo(e.target.files[0]); e.target.value=""; });
 $("#exportBtn").addEventListener("click", exportar);
+$("#updateBtn").addEventListener("click", actualizarDesdeGoogle);
+$("#updateBtnBig") && $("#updateBtnBig").addEventListener("click", actualizarDesdeGoogle);
 $("#bajaSearch").addEventListener("input", drawUsab);
 ["detSearch","detNivel","detTeam","detAccion"].forEach(id=>$("#"+id).addEventListener("input", drawDet));
 
