@@ -142,6 +142,14 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
     print(f"    - Correos consolidados (upgrades): {n_consolidados}")
     print(f"    - Asignación consolidada: {consol.shape[0]} filas "
           f"(antes {asig.shape[0]})")
+
+    # Se excluyen los registros sin licencia vigente (Cantidad lic = 0):
+    # no se muestran en ningún indicador.
+    antes = len(consol)
+    consol = consol[pd.to_numeric(consol["Cantidad lic"], errors="coerce").fillna(0) > 0] \
+        .reset_index(drop=True)
+    print(f"    - Registros excluidos por 'Cantidad lic' = 0: {antes - len(consol)}")
+    print(f"    - Asignación final (licencias vigentes): {consol.shape[0]} filas")
     return consol
 
 
@@ -246,10 +254,20 @@ def calcular(df: pd.DataFrame, fecha_corte: pd.Timestamp) -> pd.DataFrame:
     print(f"    - Usuarios marcados como 'Reciente' "
           f"(< {DIAS_MIN_EVALUACION} días de licencia): {int(mask_reciente.sum())}")
 
-    # Días sin uso: corte - Last Active; si Last Active vacío pero hay
-    # registro de asignación, se usa Días calendario.
-    dias_sin_uso = (corte - d["Last Active"]).dt.days
-    d["Días sin uso"] = dias_sin_uso.where(
+    # Días sin uso: días HÁBILES (lunes a viernes) entre la última conexión
+    # y la fecha de corte. Como la última conexión nunca es anterior a la
+    # asignación, en el peor de los casos equivale a los "Días hábiles".
+    # Si no hay registro de conexión, se toma directamente "Días hábiles".
+    d["Días sin uso"] = [
+        busdays(la) if pd.notna(la) else dh
+        for la, dh in zip(d["Last Active"], d["Días hábiles"])
+    ]
+    d["Días sin uso"] = pd.Series(d["Días sin uso"], index=d.index).astype("Int64")
+
+    # Días desde la última conexión (naturales): corte - Last Active.
+    # Si no hay conexión registrada, se usa "Días calendario".
+    dias_desde = (corte - d["Last Active"]).dt.days
+    d["Días desde últ. conexión"] = dias_desde.where(
         d["Last Active"].notna(), d["Días calendario"]
     ).clip(lower=0).astype("Int64")
 
@@ -289,7 +307,8 @@ def ordenar_columnas(d: pd.DataFrame) -> pd.DataFrame:
         "Estimated Spend (USD)",
     ]
     # B) Bloque de días
-    bloque_b = ["Días calendario", "Días hábiles", "Días sin uso"]
+    bloque_b = ["Días calendario", "Días hábiles", "Días sin uso",
+                "Días desde últ. conexión"]
     # C) Campos calculados
     bloque_c = [
         "% de uso", "Nivel de uso", "Amplitud de adopción (0-5)",
@@ -334,8 +353,8 @@ def usabilidad_baja(final: pd.DataFrame) -> pd.DataFrame:
     """
     mask = final["Nivel de uso"].isin(["4.Bajo", "5.Nulo"])
     cols = ["User Team", "Nombre", "Correo electrónico", "Nivel de uso",
-            "% de uso", "Última conexión", "Días activos", "Días hábiles",
-            "Días sin uso", "Acción sugerida"]
+            "% de uso", "Última conexión", "Días desde últ. conexión",
+            "Días activos", "Días hábiles", "Días sin uso", "Acción sugerida"]
     out = final.loc[mask].copy()
     out["Última conexión"] = out["Last Active"]
     out["Días activos"] = out["Days Active"]
@@ -402,6 +421,37 @@ def uso_por_team(final: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
+def presupuesto_ops(consol: pd.DataFrame) -> pd.DataFrame:
+    """Consumo de los usuarios con 'Presupuesto Ops' > 0, por fecha de asignación.
+
+    Muestra, por cada fecha en que se asignaron licencias, la cantidad de
+    usuarios y el monto (en pesos) correspondiente a esa fecha, más el total.
+    """
+    base = consol[pd.to_numeric(consol["Presupuesto Ops"], errors="coerce")
+                  .fillna(0) > 0].copy()
+    base["Fecha"] = pd.to_datetime(base["Fecha"], errors="coerce")
+    g = (
+        base.groupby(base["Fecha"].dt.date)
+        .agg(**{
+            "Usuarios": ("email_key", "nunique"),
+            "Presupuesto Ops (MXN)": ("Presupuesto Ops", "sum"),
+            "Facturado (MXN)": ("Facturado (MXN)", "sum"),
+        })
+        .reset_index()
+        .rename(columns={"Fecha": "Fecha de asignación"})
+        .sort_values("Fecha de asignación")
+    )
+    g["Fecha de asignación"] = pd.to_datetime(g["Fecha de asignación"])
+    total = pd.DataFrame([{
+        "Fecha de asignación": pd.NaT,
+        "Usuarios": g["Usuarios"].sum(),
+        "Presupuesto Ops (MXN)": g["Presupuesto Ops (MXN)"].sum(),
+        "Facturado (MXN)": g["Facturado (MXN)"].sum(),
+    }])
+    out = pd.concat([g, total], ignore_index=True)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Verificación por consola
 # --------------------------------------------------------------------------- #
@@ -433,6 +483,11 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
     # Días hábiles nunca debe superar los calendario.
     assert (final["Días hábiles"] <= final["Días calendario"]).all(), \
         "Días hábiles > Días calendario!"
+    # Días sin uso (hábiles) nunca debe superar los días hábiles.
+    assert (final["Días sin uso"] <= final["Días hábiles"]).all(), \
+        "Días sin uso > Días hábiles!"
+    # Ningún registro debe tener Cantidad lic = 0.
+    assert (final["Cantidad lic"] > 0).all(), "Hay registros con Cantidad lic = 0!"
     niveles_validos = {"1.Muy Alto", "2.Alto", "3.Medio", "4.Bajo", "5.Nulo", "Reciente"}
     assert set(final["Nivel de uso"]).issubset(niveles_validos), "Nivel inválido!"
     # Ningún usuario "Reciente" debe tener 15+ días de licencia asignada.
@@ -457,7 +512,7 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
 # --------------------------------------------------------------------------- #
 # 6. Exportación con formato
 # --------------------------------------------------------------------------- #
-def exportar(final, volum, baja, montos, niveles, usoteam, fecha_corte):
+def exportar(final, volum, baja, montos, niveles, usoteam, presupops, fecha_corte):
     print(f"\n[6] Exportando a: {ARCHIVO_SALIDA}")
     with pd.ExcelWriter(ARCHIVO_SALIDA, engine="xlsxwriter",
                         datetime_format="yyyy-mm-dd") as writer:
@@ -570,39 +625,6 @@ def exportar(final, volum, baja, montos, niveles, usoteam, fecha_corte):
             ws3.set_column(col, col, max(len(str(name)) + 2, 16))
         ws3.freeze_panes(3, 0)
 
-        # ---------------- Hoja: Monto por User Team ----------------
-        hoja4 = "Monto por User Team"
-        montos.to_excel(writer, sheet_name=hoja4, startrow=2, index=False)
-        ws4 = writer.sheets[hoja4]
-        ws4.write(0, 0, "Monto de licencias por grupo (User Team)", fmt_titulo)
-        for col, name in enumerate(montos.columns):
-            ws4.write(2, col, name, fmt_hdr)
-            ws4.set_column(col, col, max(len(str(name)) + 2, 16))
-        # Formato de moneda en columnas de costos.
-        for cname in ["Costo anual (USD)", "Facturado (USD)", "Facturado (MXN)"]:
-            if cname in montos.columns:
-                ci = list(montos.columns).index(cname)
-                ws4.set_column(ci, ci, 18, fmt_money)
-        # Resalta fila TOTAL.
-        total_row = 2 + len(montos)
-        for col in range(len(montos.columns)):
-            ws4.write(total_row, col, montos.iloc[-1, col], fmt_total)
-
-        # Gráfico de barras: Facturado (MXN) por team (sin TOTAL).
-        chart2 = wb.add_chart({"type": "bar"})
-        m = len(montos) - 1  # excluye TOTAL
-        col_team = list(montos.columns).index("User Team")
-        col_mxn = list(montos.columns).index("Facturado (MXN)")
-        chart2.add_series({
-            "name": "Facturado (MXN)",
-            "categories": [hoja4, 3, col_team, 2 + m, col_team],
-            "values": [hoja4, 3, col_mxn, 2 + m, col_mxn],
-            "fill": {"color": "#4338CA"},
-        })
-        chart2.set_title({"name": "Facturado (MXN) por User Team"})
-        chart2.set_size({"width": 720, "height": 420})
-        ws4.insert_chart(2, len(montos.columns) + 1, chart2)
-
         # ---------------- Hoja: Resumen Niveles ----------------
         hoja5 = "Resumen Niveles"
         niveles.to_excel(writer, sheet_name=hoja5, startrow=2, index=False)
@@ -646,9 +668,75 @@ def exportar(final, volum, baja, montos, niveles, usoteam, fecha_corte):
         chart4.set_size({"width": 720, "height": 420})
         ws6.insert_chart(2, len(usoteam.columns) + 1, chart4)
 
+        # ---------------- Hoja: Consumo Presup. Ops ----------------
+        hoja7 = "Consumo Presup. Ops"
+        n_usuarios_po = int(presupops.iloc[-1]["Usuarios"]) if len(presupops) else 0
+        presupops.to_excel(writer, sheet_name=hoja7, startrow=3, index=False)
+        ws7 = writer.sheets[hoja7]
+        ws7.write(0, 0, "Consumo de usuarios con Presupuesto Ops > 0", fmt_titulo)
+        ws7.write(1, 0, f"Usuarios con Presupuesto Ops: {n_usuarios_po}  |  "
+                        f"Total en pesos: "
+                        f"{presupops.iloc[-1]['Presupuesto Ops (MXN)']:,.2f} MXN", fmt_sub)
+        for col, name in enumerate(presupops.columns):
+            ws7.write(3, col, name, fmt_hdr)
+            ws7.set_column(col, col, max(len(str(name)) + 2, 18))
+        for cname in ["Presupuesto Ops (MXN)", "Facturado (MXN)"]:
+            if cname in presupops.columns:
+                ci = list(presupops.columns).index(cname)
+                ws7.set_column(ci, ci, 20, fmt_money)
+        # Resalta fila TOTAL (última).
+        total_row7 = 3 + len(presupops)
+        ws7.write(total_row7, 0, "TOTAL", fmt_total)
+        for col in range(1, len(presupops.columns)):
+            ws7.write(total_row7, col, presupops.iloc[-1, col], fmt_total)
+        # Gráfico de columnas: Presupuesto Ops por fecha (sin TOTAL).
+        chart5 = wb.add_chart({"type": "column"})
+        pp = len(presupops) - 1  # excluye TOTAL
+        col_po = list(presupops.columns).index("Presupuesto Ops (MXN)")
+        chart5.add_series({
+            "name": "Presupuesto Ops (MXN)",
+            "categories": [hoja7, 4, 0, 3 + pp, 0],
+            "values": [hoja7, 4, col_po, 3 + pp, col_po],
+            "fill": {"color": "#0F766E"},
+            "data_labels": {"value": True},
+        })
+        chart5.set_title({"name": "Presupuesto Ops (MXN) por fecha de asignación"})
+        chart5.set_x_axis({"num_format": "yyyy-mm-dd"})
+        chart5.set_size({"width": 720, "height": 400})
+        ws7.insert_chart(3, len(presupops.columns) + 1, chart5)
+
+        # ---------------- Hoja: Monto por User Team (al final) ----------------
+        hoja4 = "Monto por User Team"
+        montos.to_excel(writer, sheet_name=hoja4, startrow=2, index=False)
+        ws4 = writer.sheets[hoja4]
+        ws4.write(0, 0, "Monto de licencias por grupo (User Team)", fmt_titulo)
+        for col, name in enumerate(montos.columns):
+            ws4.write(2, col, name, fmt_hdr)
+            ws4.set_column(col, col, max(len(str(name)) + 2, 16))
+        for cname in ["Costo anual (USD)", "Facturado (USD)", "Facturado (MXN)"]:
+            if cname in montos.columns:
+                ci = list(montos.columns).index(cname)
+                ws4.set_column(ci, ci, 18, fmt_money)
+        total_row = 2 + len(montos)
+        for col in range(len(montos.columns)):
+            ws4.write(total_row, col, montos.iloc[-1, col], fmt_total)
+        chart2 = wb.add_chart({"type": "bar"})
+        m = len(montos) - 1  # excluye TOTAL
+        col_team = list(montos.columns).index("User Team")
+        col_mxn = list(montos.columns).index("Facturado (MXN)")
+        chart2.add_series({
+            "name": "Facturado (MXN)",
+            "categories": [hoja4, 3, col_team, 2 + m, col_team],
+            "values": [hoja4, 3, col_mxn, 2 + m, col_mxn],
+            "fill": {"color": "#4338CA"},
+        })
+        chart2.set_title({"name": "Facturado (MXN) por User Team"})
+        chart2.set_size({"width": 720, "height": 420})
+        ws4.insert_chart(2, len(montos.columns) + 1, chart2)
+
     print(f"    - Archivo generado con hojas: Análisis Detallado, "
-          f"Volumetría Licencias, Usabilidad Baja, Monto por User Team, "
-          f"Resumen Niveles, % Uso por Team.")
+          f"Volumetría Licencias, Usabilidad Baja, Resumen Niveles, "
+          f"% Uso por Team, Consumo Presup. Ops, Monto por User Team.")
 
 
 # --------------------------------------------------------------------------- #
@@ -671,11 +759,12 @@ def main():
     montos = monto_por_team(consol)
     niveles = resumen_niveles(final)
     usoteam = uso_por_team(final)
+    presupops = presupuesto_ops(consol)
 
     verificar(final, consol, usab, fecha_corte)
     exportar(final.drop(columns=["email_key"], errors="ignore"),
              volum.drop(columns=["email_key"], errors="ignore"),
-             baja, montos, niveles, usoteam, fecha_corte)
+             baja, montos, niveles, usoteam, presupops, fecha_corte)
 
     print("\n✔ Proceso completado con éxito.")
 

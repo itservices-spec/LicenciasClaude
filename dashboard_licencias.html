@@ -273,24 +273,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         </section>
       </div>
       <div>
-        <div class="section-title"><h2>Monto por grupo</h2><span>User Team</span></div>
+        <div class="section-title"><h2>Promedio de % de uso por grupo</h2><span>User Team</span></div>
         <section class="card">
-          <h3>Facturado (MXN) por User Team</h3>
-          <div class="csub">Monto que corresponde a cada grupo.</div>
-          <div class="chart-host" id="chTeams"></div>
+          <h3>% de uso promedio por User Team</h3>
+          <div class="csub">Intensidad de adopción por equipo. La línea punteada marca el 100% (uso diario en días hábiles).</div>
+          <div class="chart-host" id="chUsoTeam"></div>
         </section>
       </div>
     </div>
-
-    <div class="section-title"><h2>Promedio de % de uso por grupo</h2><span>User Team</span></div>
-    <section class="card">
-      <h3>% de uso promedio por User Team</h3>
-      <div class="csub">Intensidad de adopción por equipo. La línea punteada marca el 100% (uso diario en días hábiles).</div>
-      <div class="chart-host" id="chUsoTeam"></div>
-    </section>
-
-    <div class="section-title"><h2>Monto por grupo (User Team)</h2><span>detalle de costos</span></div>
-    <section class="tbl-wrap"><table id="tblTeams"></table></section>
 
     <div class="section-title"><h2>Usuarios con usabilidad baja</h2><span>nivel Bajo o Nulo — candidatos a revisión</span></div>
     <section>
@@ -299,6 +289,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <span class="muted" id="bajaCount"></span>
       </div>
       <div class="tbl-wrap"><table id="tblBaja"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Consumo — usuarios con Presupuesto Ops</h2><span>Presupuesto Ops &gt; 0, por fecha de asignación</span></div>
+    <section class="card">
+      <h3>Presupuesto Ops asignado por fecha</h3>
+      <div class="csub" id="poSub">Usuarios con Presupuesto Ops y el monto (en pesos) por fecha de asignación.</div>
+      <div class="chart-host" id="chPresupOps"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblPresupOps"></table></div>
     </section>
 
     <div class="section-title"><h2>Análisis detallado</h2><span>todos los usuarios y campos calculados</span></div>
@@ -311,6 +309,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <span class="muted" id="detCount"></span>
       </div>
       <div class="tbl-wrap"><table id="tblDet"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Monto por grupo (User Team)</h2><span>detalle de costos</span></div>
+    <section class="card">
+      <h3>Facturado (MXN) por User Team</h3>
+      <div class="csub">Monto que corresponde a cada grupo.</div>
+      <div class="chart-host" id="chTeams"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblTeams"></table></div>
     </section>
 
     <p class="footer-note">Generado en el navegador · Lógica equivalente a <code>generar_reporte.py</code></p>
@@ -432,6 +438,12 @@ function procesar(asigRows, usabRows){
     consol.push(base);
   }
 
+  /* Excluir registros sin licencia vigente (Cantidad lic = 0): no se
+     muestran en ningún indicador. */
+  const consolAll=consol.length, consolF=consol.filter(r=>num(r["Cantidad lic"])>0);
+  const nSinLic=consolAll-consolF.length;
+  consol.length=0; consol.push(...consolF);
+
   /* --- Índice de usabilidad + fecha de corte --- */
   const usabIdx=new Map();
   let corte=null;
@@ -467,11 +479,12 @@ function procesar(asigRows, usabRows){
     if(nivel==="5.Nulo" && dcal<DIAS_MIN_EVALUACION) nivel="Reciente";
     row["Nivel de uso"]=nivel;
 
-    // Días sin uso
-    let dsu;
-    if(row["Last Active"]) dsu=Math.max(0, dayDiff(row["Last Active"], corte));
-    else dsu=dcal;
-    row["Días sin uso"]=dsu;
+    // Días sin uso: días HÁBILES entre la última conexión y el corte.
+    // Como la conexión nunca es previa a la asignación, en el peor caso
+    // equivale a los días hábiles. Sin registro -> se usa días hábiles.
+    row["Días sin uso"] = row["Last Active"] ? busdayCount(row["Last Active"], corte) : dhab;
+    // Días desde la última conexión (naturales); sin registro -> días calendario.
+    row["Días desde últ. conexión"] = row["Last Active"] ? Math.max(0, dayDiff(row["Last Active"], corte)) : dcal;
 
     // Amplitud de adopción (0-5)
     const cat1=(row["Chats"]+row["Messages"])>0;
@@ -481,13 +494,30 @@ function procesar(asigRows, usabRows){
     const cat5=(row["Artifacts Created"])>0;
     row["Amplitud de adopción (0-5)"]=[cat1,cat2,cat3,cat4,cat5].filter(Boolean).length;
 
-    row["Acción sugerida"]=accionSugerida(row["Nivel de uso"], dsu);
+    row["Acción sugerida"]=accionSugerida(row["Nivel de uso"], row["Días sin uso"]);
     row.__tieneUso=tieneUso;
     filas.push(row);
   }
 
-  return {rows:filas, consol, corte, nConsol,
+  return {rows:filas, consol, corte, nConsol, nSinLic,
           conUso:filas.filter(f=>f.__tieneUso).length};
+}
+
+/* Consumo de usuarios con Presupuesto Ops > 0, por fecha de asignación. */
+function aggPresupOps(consol){
+  const byDate=new Map();
+  for(const r of consol){
+    if(num(r["Presupuesto Ops"])<=0) continue;
+    const d=r["Fecha"]; if(!d) continue;
+    const k=fmtDate(d);
+    const o=byDate.get(k) || {fecha:new Date(d), users:new Set(), po:0, mxn:0};
+    o.users.add(r.__key); o.po+=num(r["Presupuesto Ops"]); o.mxn+=num(r["Facturado (MXN)"]);
+    byDate.set(k,o);
+  }
+  const arr=[...byDate.values()].sort((a,b)=>a.fecha-b.fecha)
+    .map(o=>({fecha:o.fecha, users:o.users.size, po:o.po, mxn:o.mxn}));
+  const total={users:arr.reduce((s,x)=>s+x.users,0), po:arr.reduce((s,x)=>s+x.po,0), mxn:arr.reduce((s,x)=>s+x.mxn,0)};
+  return {rows:arr, total};
 }
 
 /* ---------- Agregados / indicadores ---------- */
@@ -745,7 +775,8 @@ function renderKPIs(P){
       <div class="foot">${k.f}</div>
       <div class="bar-accent" style="background:var(${k.c})"></div>
     </div>`).join("");
-  $("#kpiSub").textContent=`corte ${fmtDate(P.corte)}`;
+  $("#kpiSub").textContent=`corte ${fmtDate(P.corte)}`
+    + (P.nSinLic? ` · ${P.nSinLic} registro(s) sin licencia vigente excluido(s)` : "");
 }
 
 function renderTeams(teams){
@@ -778,19 +809,21 @@ function drawBaja(){
   const f=BAJA.filter(r=>!q || [r["Nombre"],r["Correo electrónico"],r["User Team"]].join(" ").toLowerCase().includes(q));
   const head=`<thead><tr><th>Nombre</th><th>Correo</th>
     <th>Nivel</th><th class="num">% uso</th><th class="num">Última conexión</th>
+    <th class="num">Días desde conexión</th>
     <th class="num">Días activos</th><th class="num">Días hábiles</th>
-    <th class="num">Días sin uso</th><th>Acción sugerida</th></tr></thead>`;
+    <th class="num">Días sin uso (háb.)</th><th>Acción sugerida</th></tr></thead>`;
   // Agrupación por User Team con fila-encabezado por grupo.
   const groups=new Map();
   for(const r of f){ const t=r["User Team"]??"—"; (groups.get(t)||groups.set(t,[]).get(t)).push(r); }
   let body="";
   for(const [team,rs] of groups){
-    body+=`<tr class="grp"><td colspan="9">${team} · ${rs.length} usuario(s)</td></tr>`;
+    body+=`<tr class="grp"><td colspan="10">${team} · ${rs.length} usuario(s)</td></tr>`;
     body+=rs.map(r=>`<tr>
       <td>${r["Nombre"]??""}</td><td>${r["Correo electrónico"]??""}</td>
       <td><span class="pill ${NIVEL_CLS[r["Nivel de uso"]]}">${r["Nivel de uso"]}</span></td>
       <td class="num">${fmtNum(r["% de uso"])}</td>
       <td class="num">${r["Last Active"]?fmtDate(r["Last Active"]):'<span class="muted">Sin registro</span>'}</td>
+      <td class="num">${fmtInt(r["Días desde últ. conexión"])}</td>
       <td class="num">${fmtInt(r["Days Active"])}</td><td class="num">${fmtInt(r["Días hábiles"])}</td>
       <td class="num">${fmtInt(r["Días sin uso"])}</td>
       <td>${r["Acción sugerida"]}</td></tr>`).join("");
@@ -802,7 +835,8 @@ function drawBaja(){
 const DET_COLS=[
   {k:"Nombre",t:"Nombre"},{k:"Correo electrónico",t:"Correo"},{k:"User Team",t:"User Team"},
   {k:"Licencia",t:"Licencia"},{k:"Fecha",t:"Fecha asig.",d:1},
-  {k:"Días calendario",t:"Días cal.",n:1},{k:"Días hábiles",t:"Días háb.",n:1},{k:"Días sin uso",t:"Días sin uso",n:1},
+  {k:"Días calendario",t:"Días cal.",n:1},{k:"Días hábiles",t:"Días háb.",n:1},
+  {k:"Días sin uso",t:"Días sin uso (háb.)",n:1},{k:"Días desde últ. conexión",t:"Días desde conexión",n:1},
   {k:"Days Active",t:"Días activos",n:1},{k:"% de uso",t:"% uso",n:1,dec:1},
   {k:"Nivel de uso",t:"Nivel",p:1},{k:"Amplitud de adopción (0-5)",t:"Amplitud",n:1},
   {k:"Acción sugerida",t:"Acción"},
@@ -852,6 +886,49 @@ function drawDet(){
   $("#detCount").textContent=`${f.length} de ${DET.length} usuario(s)`;
 }
 
+/* Tabla de consumo — usuarios con Presupuesto Ops > 0, por fecha. */
+function renderPresupOps(po){
+  $("#poSub").innerHTML=`<b>${fmtInt(po.total.users)}</b> usuario(s) con Presupuesto Ops · `
+    +`Total en pesos: <b>${fmtMXN(po.total.po)} MXN</b>`;
+  const head=`<thead><tr><th>Fecha de asignación</th><th class="num">Usuarios</th>
+    <th class="num">Presupuesto Ops (MXN)</th><th class="num">Facturado (MXN)</th></tr></thead>`;
+  const body=po.rows.map(r=>`<tr>
+    <td>${fmtDate(r.fecha)}</td><td class="num">${fmtInt(r.users)}</td>
+    <td class="num">${fmtMXN(r.po)}</td><td class="num">${fmtMXN(r.mxn)}</td></tr>`).join("");
+  const total=`<tr class="total"><td>TOTAL</td><td class="num">${fmtInt(po.total.users)}</td>
+    <td class="num">${fmtMXN(po.total.po)}</td><td class="num">${fmtMXN(po.total.mxn)}</td></tr>`;
+  $("#tblPresupOps").innerHTML=head+"<tbody>"+body+total+"</tbody>";
+}
+
+/* Columnas: Presupuesto Ops (MXN) por fecha de asignación. */
+function presupOpsChart(host, po){
+  host.innerHTML="";
+  const data=po.rows;
+  const W=host.clientWidth||760, H=300, m={t:24,r:14,b:44,l:64};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  if(!data.length){ host.appendChild(svg); return; }
+  const maxY=niceMax(Math.max(1,...data.map(d=>d.po)));
+  const y=v=> m.t+ih-ih*(v/maxY);
+  const gap=iw/data.length, bw=gap*0.6;
+  for(let i=0;i<=4;i++){ const v=maxY*i/4, yy=y(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
+    svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, "$"+fmtInt(v)));
+  }
+  data.forEach((d,i)=>{
+    const cx=m.l+gap*i+gap/2, by=y(d.po), bh=ih-(by-m.t), bx=cx-bw/2;
+    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:cssv("--brand-2")});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${fmtDate(d.fecha)}</div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">Presupuesto Ops</span><b>${fmtMXN(d.po)}</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:cx,y:by-7,"text-anchor":"middle"}, fmtInt(d.users)+"u"));
+    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, fmtDate(d.fecha).slice(5)));
+  });
+  host.appendChild(svg);
+}
+
 /* ===================================================================== *
  *  Orquestación: estado, render global, persistencia, IO
  * ===================================================================== */
@@ -896,17 +973,21 @@ function renderAll(P){
   const niveles=aggNiveles(P.rows);
   const teams=aggTeams(P.consol);
   const usoteam=aggUsoTeam(P.rows);
+  const presupops=aggPresupOps(P.consol);
   STATE.__niveles=niveles;
   lineChart($("#chVolum"), volum);
   columnChart($("#chNiveles"), niveles, onNivClick);
   barChart($("#chTeams"), teams, "mxn", fmtMXN);
   pctBarChart($("#chUsoTeam"), usoteam);
+  presupOpsChart($("#chPresupOps"), presupops);
   renderTeams(teams);
   renderBaja(P.rows);
+  renderPresupOps(presupops);
   renderDet(P.rows);
   drawNivList();
   STATE.__redraw=()=>{ lineChart($("#chVolum"),volum); columnChart($("#chNiveles"),niveles,onNivClick);
-    barChart($("#chTeams"),teams,"mxn",fmtMXN); pctBarChart($("#chUsoTeam"),usoteam); };
+    barChart($("#chTeams"),teams,"mxn",fmtMXN); pctBarChart($("#chUsoTeam"),usoteam);
+    presupOpsChart($("#chPresupOps"),presupops); };
 }
 
 function leerLibro(arrayBuffer){
@@ -987,7 +1068,7 @@ function exportar(){
     "Cantidad lic","Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops","Fecha",
     "Seat Tier","Role","Last Active","Days Active","Chats","Messages","Projects Created","Projects Used",
     "Pull Requests","Code sessions","File Edits","Cowork Sessions","Cowork Messages","Artifacts Created","Estimated Spend (USD)"];
-  const B=["Días calendario","Días hábiles","Días sin uso"];
+  const B=["Días calendario","Días hábiles","Días sin uso","Días desde últ. conexión"];
   const C=["% de uso","Nivel de uso","Amplitud de adopción (0-5)","Acción sugerida","Consideraciones"];
   const cols=[...A,...B,...C];
   const det=STATE.rows.map(r=>{const o={}; for(const c of cols){
@@ -1005,13 +1086,10 @@ function exportar(){
     .map(r=>({"User Team":r["User Team"],Nombre:r["Nombre"],Correo:r["Correo electrónico"],
       Nivel:r["Nivel de uso"],"% de uso":r["% de uso"],
       "Última conexión":r["Last Active"]?fmtDate(r["Last Active"]):"Sin registro",
+      "Días desde últ. conexión":r["Días desde últ. conexión"],
       "Días activos":r["Days Active"],"Días hábiles":r["Días hábiles"],
       "Días sin uso":r["Días sin uso"],"Acción sugerida":r["Acción sugerida"]}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(baja), "Usabilidad Baja");
-  // Monto por team
-  const teams=aggTeams(STATE.consol).map(t=>({"User Team":t.team,Usuarios:t.users,Licencias:t.lic,
-    "Costo anual (USD)":t.usd,"Facturado (USD)":t.fusd,"Facturado (MXN)":t.mxn}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teams), "Monto por User Team");
   // Resumen niveles
   const niv=aggNiveles(STATE.rows).map(n=>({"Nivel de uso":n.nivel,Usuarios:n.count,"% de uso promedio":Math.round(n.prom*10)/10}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(niv), "Resumen Niveles");
@@ -1019,6 +1097,17 @@ function exportar(){
   const ut=aggUsoTeam(STATE.rows).map(t=>({"User Team":t.team,Usuarios:t.users,
     "% de uso promedio":Math.round(t.prom*10)/10,"Días activos promedio":Math.round(t.daProm*10)/10}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ut), "% Uso por Team");
+  // Consumo Presup. Ops (usuarios con Presupuesto Ops > 0, por fecha)
+  const po=aggPresupOps(STATE.consol);
+  const poRows=po.rows.map(r=>({"Fecha de asignación":fmtDate(r.fecha),Usuarios:r.users,
+    "Presupuesto Ops (MXN)":Math.round(r.po*100)/100,"Facturado (MXN)":Math.round(r.mxn*100)/100}));
+  poRows.push({"Fecha de asignación":"TOTAL",Usuarios:po.total.users,
+    "Presupuesto Ops (MXN)":Math.round(po.total.po*100)/100,"Facturado (MXN)":Math.round(po.total.mxn*100)/100});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(poRows), "Consumo Presup. Ops");
+  // Monto por team (al final)
+  const teams=aggTeams(STATE.consol).map(t=>({"User Team":t.team,Usuarios:t.users,Licencias:t.lic,
+    "Costo anual (USD)":t.usd,"Facturado (USD)":t.fusd,"Facturado (MXN)":t.mxn}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teams), "Monto por User Team");
 
   XLSX.writeFile(wb, "Analisis_Usabilidad_Final.xlsx");
 }
