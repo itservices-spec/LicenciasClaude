@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Usabilidad · Licencias Claude</title>
+<!-- SheetJS removido: versión ligera para incrustar -->
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#f4f5f7; --surface:#ffffff; --surface-2:#fafafa;
+    --border:#e5e7eb; --border-strong:#d1d5db;
+    --text:#0b0f19; --text-2:#52514e; --muted:#8a8f98;
+    --brand:#4338CA; --brand-2:#0F766E;
+    --grid:#eceef1;
+    /* categorical (validated) */
+    --series-1:#2a78d6; --series-3:#1baf7a;
+    /* status / niveles ordenados (mejor -> peor) */
+    --lvl-1:#0ca30c; --lvl-2:#1baf7a; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#d03b3b;
+    --lvl-rec:#64748b;
+    --seq:#2a78d6;
+    --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.10);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --bg:#111214; --surface:#1a1a19; --surface-2:#212220;
+      --border:#2e2f2c; --border-strong:#3a3b38;
+      --text:#ffffff; --text-2:#c3c2b7; --muted:#8f938c;
+      --brand:#8b83f0; --brand-2:#4fd1b8;
+      --grid:#262723;
+      --series-1:#3987e5; --series-3:#199e70;
+      --lvl-1:#0ca30c; --lvl-2:#199e70; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#e66767; --lvl-rec:#94a3b8;
+      --seq:#3987e5;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#111214; --surface:#1a1a19; --surface-2:#212220;
+    --border:#2e2f2c; --border-strong:#3a3b38;
+    --text:#ffffff; --text-2:#c3c2b7; --muted:#8f938c;
+    --brand:#8b83f0; --brand-2:#4fd1b8;
+    --grid:#262723;
+    --series-1:#3987e5; --series-3:#199e70;
+    --lvl-1:#0ca30c; --lvl-2:#199e70; --lvl-3:#fab219; --lvl-4:#ec835a; --lvl-5:#e66767; --lvl-rec:#94a3b8;
+    --seq:#3987e5;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--brand)}
+  .wrap{max-width:1280px; margin:0 auto; padding:20px 20px 64px}
+
+  /* Header */
+  header.top{
+    position:sticky; top:0; z-index:20; background:var(--surface);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding:12px 20px; box-shadow:var(--shadow);
+  }
+  header.top .brand{display:flex; align-items:center; gap:11px; margin-right:auto}
+  header.top .logo{
+    width:34px; height:34px; border-radius:9px; flex:0 0 auto;
+    background:linear-gradient(135deg,var(--brand),var(--brand-2));
+    display:grid; place-items:center; color:#fff; font-weight:700; font-size:15px;
+  }
+  header.top h1{font-size:15px; margin:0; font-weight:650; letter-spacing:-.01em}
+  header.top .sub{font-size:12px; color:var(--muted)}
+  .btn{
+    appearance:none; border:1px solid var(--border-strong); background:var(--surface);
+    color:var(--text); border-radius:9px; padding:8px 13px; font-size:13px; font-weight:550;
+    cursor:pointer; display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--brand); color:var(--brand)}
+  .btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+  .btn.primary:hover{filter:brightness(1.06); color:#fff}
+  .btn.ghost{border-color:transparent; background:transparent; padding:8px}
+  .btn:disabled{opacity:.45; cursor:not-allowed}
+  .cut{font-size:12px; color:var(--text-2); display:flex; flex-direction:column; align-items:flex-end; line-height:1.35}
+  .cut b{color:var(--text); font-size:13px}
+
+  /* Dropzone */
+  .drop{
+    margin:22px 0; border:1.5px dashed var(--border-strong); border-radius:14px;
+    background:var(--surface); padding:34px 24px; text-align:center; transition:.15s;
+  }
+  .drop.drag{border-color:var(--brand); background:color-mix(in srgb,var(--brand) 6%,var(--surface))}
+  .drop h2{margin:.2em 0 .35em; font-size:17px}
+  .drop p{margin:.2em 0; color:var(--text-2)}
+  .drop .hint{font-size:12px; color:var(--muted); margin-top:12px}
+  .drop .icon{font-size:30px}
+
+  /* Section titles */
+  .section-title{
+    display:flex; align-items:baseline; gap:10px; margin:34px 2px 14px;
+  }
+  .section-title h2{font-size:16px; margin:0; font-weight:650; letter-spacing:-.01em}
+  .section-title span{font-size:12px; color:var(--muted)}
+
+  /* KPI cards */
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px}
+  .kpi{
+    background:var(--surface); border:1px solid var(--border); border-radius:13px;
+    padding:15px 16px; box-shadow:var(--shadow);
+  }
+  .kpi .label{font-size:12px; color:var(--muted); font-weight:550; text-transform:uppercase; letter-spacing:.03em}
+  .kpi .val{font-size:26px; font-weight:700; margin-top:6px; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:14px; font-weight:600; color:var(--text-2)}
+  .kpi .foot{font-size:12px; color:var(--text-2); margin-top:3px}
+  .kpi .bar-accent{height:3px; border-radius:3px; margin-top:11px; background:var(--brand)}
+
+  /* Cards / grid */
+  .grid{display:grid; gap:16px}
+  .grid.two{grid-template-columns:1fr 1fr}
+  @media (max-width:900px){.grid.two{grid-template-columns:1fr}}
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:16px 16px 12px; box-shadow:var(--shadow);
+  }
+  .card h3{margin:0 0 2px; font-size:14px; font-weight:600}
+  .card .csub{font-size:12px; color:var(--muted); margin-bottom:10px}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-2); margin-top:6px}
+  .legend .it{display:inline-flex; align-items:center; gap:6px}
+  .legend .sw{width:11px; height:11px; border-radius:3px; display:inline-block}
+
+  /* Charts */
+  .chart-host{width:100%; position:relative}
+  svg .grid-line{stroke:var(--grid); stroke-width:1}
+  svg .axis-line{stroke:var(--border-strong); stroke-width:1}
+  svg text{fill:var(--text-2); font-size:11px}
+  svg text.lbl{fill:var(--text); font-weight:600}
+  .tooltip{
+    position:fixed; pointer-events:none; z-index:60; background:var(--surface);
+    border:1px solid var(--border-strong); border-radius:9px; box-shadow:var(--shadow);
+    padding:8px 10px; font-size:12px; color:var(--text); opacity:0; transition:opacity .08s;
+    max-width:240px;
+  }
+  .tooltip .tt-t{font-weight:650; margin-bottom:4px}
+  .tooltip .tt-r{display:flex; align-items:center; gap:7px; justify-content:space-between}
+  .tooltip .tt-r .k{display:inline-flex; align-items:center; gap:6px; color:var(--text-2)}
+  .tooltip b{font-variant-numeric:tabular-nums}
+
+  /* Tables */
+  .tbl-tools{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px}
+  .tbl-tools input, .tbl-tools select{
+    background:var(--surface-2); border:1px solid var(--border-strong); color:var(--text);
+    border-radius:8px; padding:7px 10px; font-size:13px; font-family:inherit;
+  }
+  .tbl-tools input{min-width:220px}
+  .tbl-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:12px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; font-size:13px; white-space:nowrap}
+  thead th{
+    position:sticky; top:0; background:var(--surface-2); text-align:left;
+    padding:10px 12px; font-weight:600; color:var(--text-2); border-bottom:1px solid var(--border);
+    cursor:pointer; user-select:none;
+  }
+  thead th.num, tbody td.num{text-align:right; font-variant-numeric:tabular-nums}
+  tbody td{padding:9px 12px; border-bottom:1px solid var(--border)}
+  tbody tr:hover{background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:none}
+  .pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; color:#fff}
+  .pill.l1{background:var(--lvl-1)} .pill.l2{background:var(--lvl-2)}
+  .pill.l3{background:var(--lvl-3); color:#3a2c00} .pill.l4{background:var(--lvl-4); color:#3a1c00} .pill.l5{background:var(--lvl-5)}
+  .pill.lr{background:var(--lvl-rec)}
+  .tag{display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; background:var(--surface-2); border:1px solid var(--border); color:var(--text-2)}
+  tr.total td{font-weight:700; background:var(--surface-2); border-top:2px solid var(--border-strong)}
+  tr.grp td{font-weight:650; background:color-mix(in srgb,var(--brand) 8%,var(--surface)); color:var(--text); border-top:1px solid var(--border-strong); font-size:12px; letter-spacing:.01em}
+  .muted{color:var(--muted)}
+  /* Panel de lista de usuarios por segmento de nivel (clic en gráfica) */
+  .niv-list{margin-top:12px; border-top:1px dashed var(--border-strong); padding-top:12px}
+  .niv-list.empty{display:none}
+  .niv-list .nl-head{display:flex; align-items:center; gap:9px; margin-bottom:9px; flex-wrap:wrap}
+  .niv-list .nl-head b{font-size:13px}
+  .niv-list .close{margin-left:auto}
+  .niv-chips{display:flex; flex-wrap:wrap; gap:7px; max-height:240px; overflow:auto}
+  .niv-chips .chip{display:flex; flex-direction:column; border:1px solid var(--border); border-radius:9px; padding:6px 10px; background:var(--surface-2); font-size:12px; min-width:150px}
+  .niv-chips .chip b{font-size:12.5px}
+  .niv-chips .chip span{color:var(--muted)}
+  /* Bloques de filtro con etiqueta */
+  .filter-block{display:flex; gap:10px; align-items:baseline; margin-bottom:9px}
+  .filter-lbl{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; min-width:48px; padding-top:5px}
+  /* Filtro multi-nivel (chips seleccionables) */
+  .lvl-filter{display:flex; gap:7px; flex-wrap:wrap; align-items:center; flex:1}
+  .lvl-chip{display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:20px;
+    border:1.5px solid var(--border-strong); background:var(--surface); color:var(--text-2);
+    font-size:12.5px; font-weight:600; cursor:pointer; user-select:none; transition:.12s}
+  .lvl-chip .dot{width:10px; height:10px; border-radius:50%; display:inline-block}
+  .lvl-chip.on{color:#fff; border-color:transparent}
+  .lvl-chip.off{opacity:.55}
+  .lvl-chip .cnt{font-weight:700; opacity:.85}
+  .lvl-chip.all{border-style:dashed}
+  /* Barra apilada de aprovechamiento */
+  .stackbar{display:flex; width:100%; height:34px; border-radius:8px; overflow:hidden; border:1px solid var(--border)}
+  .stackbar .seg{display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; min-width:2px; white-space:nowrap}
+  .stackleg{display:flex; gap:16px; flex-wrap:wrap; margin-top:9px; font-size:12.5px}
+  .stackleg .it{display:inline-flex; align-items:center; gap:7px}
+  .stackleg .sw{width:12px; height:12px; border-radius:3px}
+  .stackleg b{font-variant-numeric:tabular-nums}
+
+  #app{display:block}
+  .footer-note{margin-top:40px; font-size:12px; color:var(--muted); text-align:center}
+  .err{background:color-mix(in srgb,var(--lvl-5) 12%,var(--surface)); border:1px solid var(--lvl-5); color:var(--text); border-radius:10px; padding:12px 14px; margin:16px 0}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="logo">✦</div>
+    <div>
+      <h1>Dashboard de Usabilidad · Licencias Claude</h1>
+      <div class="sub">Análisis de usabilidad · vista embebida</div>
+    </div>
+  </div>
+  <div class="cut" id="cutBox" hidden>
+    <span>Fecha de corte</span><b id="cutDate">—</b>
+    <span id="updatedAt" class="muted"></span>
+  </div>
+  <button class="btn" id="themeBtn" title="Cambiar tema">◐ Tema</button>
+  <button class="btn" id="exportBtn" disabled>⬇ Exportar Excel</button>
+  
+  
+</header>
+
+<div class="wrap">
+
+  <!-- Empty state / dropzone -->
+  <div id="errBox"></div>
+
+  <!-- App -->
+  <main id="app">
+
+    <div class="section-title"><h2>Indicadores generales</h2><span id="kpiSub"></span></div>
+    <section class="kpis" id="kpis"></section>
+
+    <div class="section-title"><h2>Volumetría de licencias asignadas</h2><span>crecimiento acumulado en el tiempo</span></div>
+    <section class="card">
+      <h3>Licencias y usuarios acumulados por fecha de asignación</h3>
+      <div class="csub">Cómo han crecido las licencias asignadas desde el inicio hasta la fecha de corte.</div>
+      <div class="chart-host" id="chVolum"></div>
+      <div class="legend">
+        <span class="it"><span class="sw" style="background:var(--series-1)"></span>Licencias acumuladas</span>
+        <span class="it"><span class="sw" style="background:var(--series-3)"></span>Usuarios acumulados</span>
+      </div>
+    </section>
+
+    <div class="grid two">
+      <div>
+        <div class="section-title"><h2>Nivel de uso</h2><span>distribución de usuarios</span></div>
+        <section class="card">
+          <h3>Usuarios por nivel de uso</h3>
+          <div class="csub">Según % de uso = días activos / días hábiles. <b>Haz clic</b> en una barra para ver la lista de usuarios.</div>
+          <div class="chart-host" id="chNiveles"></div>
+          <div class="niv-list empty" id="nivList"></div>
+        </section>
+      </div>
+      <div>
+        <div class="section-title"><h2>Promedio de % de uso por grupo</h2><span>User Team</span></div>
+        <section class="card">
+          <h3>% de uso promedio por User Team</h3>
+          <div class="csub">Intensidad de adopción por equipo. La línea punteada marca el 100% (uso diario en días hábiles).</div>
+          <div class="chart-host" id="chUsoTeam"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="section-title"><h2>Usabilidad de los usuarios</h2><span>filtra por nivel y por equipo</span></div>
+    <section>
+      <div class="filter-block">
+        <span class="filter-lbl">Nivel</span>
+        <div class="lvl-filter" id="usabLevels"></div>
+      </div>
+      <div class="filter-block">
+        <span class="filter-lbl">Equipo</span>
+        <div class="lvl-filter" id="usabTeams"></div>
+      </div>
+      <div class="tbl-tools">
+        <input id="bajaSearch" type="search" placeholder="Buscar nombre, correo o equipo…">
+        <span class="muted" id="bajaCount"></span>
+      </div>
+      <div class="tbl-wrap"><table id="tblBaja"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Costo por nivel de uso</h2><span>monto ocioso vs. productivo</span></div>
+    <section class="card">
+      <h3>¿Cuánto cuesta cada nivel de uso?</h3>
+      <div class="csub">Costo total del proyecto por nivel (incluye licencias de equipo). Clasificación: <b>productivo</b> (Muy Alto/Alto/Medio), <b>ocioso</b> (Bajo/Nulo) y <b>en adopción</b> (Reciente).</div>
+      <div class="kpis" id="aprovTiles" style="margin-bottom:16px"></div>
+      <div class="chart-host" id="chCostoNivel"></div>
+      <div class="csub" style="margin-top:6px">Distribución del facturado total</div>
+      <div id="aprovBar"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblCostoNivel"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Consumo — usuarios con Presupuesto Ops</h2><span>Presupuesto Ops &gt; 0, por fecha de asignación</span></div>
+    <section class="card">
+      <h3>Presupuesto Ops asignado por fecha</h3>
+      <div class="csub" id="poSub">Usuarios con Presupuesto Ops y el monto (en pesos) por fecha de asignación.</div>
+      <div class="chart-host" id="chPresupOps"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblPresupOps"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Monto por grupo (User Team)</h2><span>detalle de costos</span></div>
+    <section class="card">
+      <h3>Facturado (MXN) por User Team</h3>
+      <div class="csub">Monto que corresponde a cada grupo.</div>
+      <div class="chart-host" id="chTeams"></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table id="tblTeams"></table></div>
+    </section>
+
+    <div class="section-title"><h2>Análisis detallado</h2><span>todos los usuarios y campos calculados</span></div>
+    <section>
+      <div class="tbl-tools">
+        <input id="detSearch" type="search" placeholder="Buscar…">
+        <select id="detNivel"><option value="">Todos los niveles</option></select>
+        <select id="detTeam"><option value="">Todos los equipos</option></select>
+        <select id="detAccion"><option value="">Todas las acciones</option></select>
+        <span class="muted" id="detCount"></span>
+      </div>
+      <div class="tbl-wrap"><table id="tblDet"></table></div>
+    </section>
+
+    <p class="footer-note">Generado en el navegador · Lógica equivalente a <code>generar_reporte.py</code></p>
+  </main>
+</div>
+
+<div class="tooltip" id="tt"></div>
+
+<script>
+"use strict";
+/* ===================================================================== *
+ *  Dashboard de Usabilidad de Licencias Claude
+ *  Replica en JavaScript la lógica de generar_reporte.py y renderiza
+ *  los indicadores. Carga/actualización recurrente + persistencia local.
+ * ===================================================================== */
+
+const CFG = {
+  hojaAsig: "Asignación",
+  hojaUsab: "Usabilidad",
+  rankLic: {premium:3, pro:2, standard:1},
+  colsCostos: ["Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops","Cantidad lic"],
+  // Montos que se SUMAN al consolidar varios registros de una licencia.
+  colsSuma: ["Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops"],
+  // Campos de comportamiento de la licencia (ID + Movimiento).
+  idCands: ["ID licencia","ID Licencia","ID licencía","Id licencia","IDLicencia"],
+  movCol: "Movimiento",
+  movRetirada: "Lic. Retirada",
+  movPrio: {"Reasignación":3, "Update":2, "Asignación":1},
+  metricasNum: ["Days Active","Chats","Messages","Projects Created","Projects Used",
+    "Pull Requests","Code sessions","File Edits","Cowork Sessions","Cowork Messages",
+    "Artifacts Created","Estimated Spend (USD)"],
+  metricasTxt: ["Name","Role","Seat Tier"],
+  storeKey: "licenciasClaude:v1",
+};
+
+const $ = s => document.querySelector(s);
+const fmtInt = n => (n==null||isNaN(n)) ? "0" : Math.round(n).toLocaleString("es-MX");
+const fmtNum = (n,d=1) => (n==null||isNaN(n)) ? "0" : Number(n).toLocaleString("es-MX",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtMXN = n => "$"+ (isNaN(n)?0:n).toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2});
+const r2 = n => Math.round((Number(n)||0)*100)/100;
+const fmtDate = d => !d ? "—" : new Date(d).toISOString().slice(0,10);
+
+/* ---------- Utilidades de dominio ---------- */
+function normEmail(v){ return (v==null?"":String(v)).trim().toLowerCase().replace(/\s+/g,""); }
+function rankLic(v){
+  if(typeof v!=="string") return 0;
+  const t=v.toLowerCase();
+  for(const [k,p] of Object.entries(CFG.rankLic)) if(t.includes(k)) return p;
+  return 0;
+}
+function toDate(v){
+  if(v==null||v==="") return null;
+  if(v instanceof Date) return isNaN(v)?null:v;
+  if(typeof v==="number"){ // serial de Excel
+    const d=new Date(Math.round((v-25569)*86400*1000)); return isNaN(d)?null:d;
+  }
+  const d=new Date(v); return isNaN(d)?null:d;
+}
+function num(v){ const n=Number(v); return isNaN(n)?0:n; }
+function dayDiff(a,b){ // b - a en días (por fecha, ignora hora)
+  if(!a||!b) return null;
+  const s=Date.UTC(a.getFullYear(),a.getMonth(),a.getDate());
+  const e=Date.UTC(b.getFullYear(),b.getMonth(),b.getDate());
+  return Math.round((e-s)/86400000);
+}
+function busdayCount(start,end){ // días hábiles (L-V) en [start,end)
+  if(!start||!end) return 0;
+  const s=new Date(start.getFullYear(),start.getMonth(),start.getDate());
+  const e=new Date(end.getFullYear(),end.getMonth(),end.getDate());
+  if(e<=s) return 0;
+  let c=0; const d=new Date(s);
+  while(d<e){ const wd=d.getDay(); if(wd!==0&&wd!==6) c++; d.setDate(d.getDate()+1); }
+  return c;
+}
+function nivelUso(pct){
+  if(pct>=101) return "1.Muy Alto";
+  if(pct>=70)  return "2.Alto";
+  if(pct>=45)  return "3.Medio";
+  if(pct>=10)  return "4.Bajo";
+  return "5.Nulo";
+}
+function accionSugerida(nivel,diasSinUso){
+  if(nivel==="Reciente") return "Seguimiento (reciente)";
+  if(nivel==="5.Nulo") return "Reasignar / cancelar";
+  if(nivel==="4.Bajo") return "Revisar";
+  if(diasSinUso!=null && diasSinUso>21) return "Revisar (inactividad)";
+  return "Mantener";
+}
+// Días mínimos con licencia asignada para poder evaluar el uso; por debajo,
+// un usuario "Nulo" se reclasifica como "Reciente".
+const DIAS_MIN_EVALUACION = 15;
+const NIVEL_CLS = {"1.Muy Alto":"l1","2.Alto":"l2","3.Medio":"l3","4.Bajo":"l4","5.Nulo":"l5","Reciente":"lr"};
+const NIVEL_ORDER = ["1.Muy Alto","2.Alto","3.Medio","4.Bajo","5.Nulo","Reciente"];
+// Clasificación de aprovechamiento del gasto por nivel de uso.
+const CLASIF_NIVEL = {"1.Muy Alto":"Productivo","2.Alto":"Productivo","3.Medio":"Productivo",
+  "4.Bajo":"Ocioso","5.Nulo":"Ocioso","Reciente":"En adopción"};
+const CLASIF_COLOR = {"Productivo":"#0ca30c","Ocioso":"#d03b3b","En adopción":"#64748b"};
+
+/* ===================================================================== *
+ *  Núcleo de procesamiento (equivalente al pipeline de Python)
+ * ===================================================================== */
+function procesar(asigRows, usabRows){
+  /* Fecha de asignación real: usa 'Fecha Asig' si existe; si no, 'Fecha'. */
+  const FECHA_CANDS=["Fecha Asig","Fecha Asignación","Fecha asignación","Fecha Asignacion"];
+  const fechaCol = (asigRows.length ? FECHA_CANDS.find(c=>c in asigRows[0]) : null) || "Fecha";
+  const usaFechaAsig = fechaCol!=="Fecha";
+  if(usaFechaAsig) asigRows.forEach(r=> r["Fecha"]=r[fechaCol]);
+
+  /* --- Consolidación por ID licencia + Movimiento --- */
+  // Reglas de "Movimiento":
+  //   * Asignación   -> primer registro de la licencia.
+  //   * Lic. Retirada-> titular anterior (reasignado): NO se considera.
+  //   * Update       -> incremento de nivel: se agrupa con la Asignación,
+  //                     suma montos y conserva la fecha de la Asignación.
+  //   * Reasignación -> titular activo actual: se trata como Asignación.
+  const idCol = (asigRows.length ? CFG.idCands.find(c=>c in asigRows[0]) : null);
+  const movOf = r => String(r[CFG.movCol]||"").trim();
+  const grupos = new Map();
+  let nRetiradas=0;
+  for(const r of asigRows){
+    const lid = idCol ? r[idCol] : normEmail(r["Correo electrónico"]);
+    if(lid==null || String(lid).trim()==="") continue;      // filas vacías
+    if(movOf(r)===CFG.movRetirada){ nRetiradas++; continue; } // excluir retiradas
+    if(!idCol && !normEmail(r["Correo electrónico"])) continue;
+    const key=String(lid).trim();
+    (grupos.get(key) || grupos.set(key,[]).get(key)).push(r);
+  }
+  const consol=[];
+  let nConsol=0, nReasig=0;
+  for(const [key,g] of grupos){
+    const movs=g.map(movOf);
+    // Registro base (titular vigente): prioridad Reasignación > Update > Asignación.
+    const ord=[...g].sort((x,y)=>(CFG.movPrio[movOf(x)]||0)-(CFG.movPrio[movOf(y)]||0));
+    const base={...ord[ord.length-1]};
+    // Montos: suma de todos los registros del grupo (Asignación + Update, etc.).
+    for(const c of CFG.colsSuma) base[c]=g.reduce((s,x)=>s+num(x[c]),0);
+    base["Cantidad lic"]=g.reduce((s,x)=>s+num(x["Cantidad lic"]),0);
+    // Fecha de asignación: de la Asignación (o Reasignación si no hay Asignación).
+    const pickFecha=arr=>{ let best=null; for(const x of arr){ const d=toDate(x["Fecha"]); if(d&&(!best||d<best)) best=d; } return best; };
+    const asg=g.filter(x=>movOf(x)==="Asignación"), rea=g.filter(x=>movOf(x)==="Reasignación");
+    base["Fecha"]=pickFecha(asg.length?asg:(rea.length?rea:g));
+    base.__key=normEmail(base["Correo electrónico"]);
+    base.__lid=key;
+    for(const c of CFG.colsCostos) base[c]=num(base[c]);
+    if(g.length>1) nConsol++;
+    if(movs.includes("Reasignación")) nReasig++;
+    if(g.length>1 || movs.some(m=>m && m!=="Asignación")){
+      const nota=`Licencia ${key} [${movs.join(" + ")}]. Titular activo: ${base["Nombre"]}. `
+        +`Montos sumados; fecha de asignación de la Asignación original.`;
+      const prev=base["Consideraciones"];
+      base["Consideraciones"]=(prev && String(prev).trim())? `${prev} | ${nota}` : nota;
+    }
+    consol.push(base);
+  }
+
+  /* Usuarios sin licencia vigente (Cantidad lic = 0): se excluyen de las
+     vistas de USABILIDAD. */
+  const nSinLic = consol.filter(r=>num(r["Cantidad lic"])<=0).length;
+
+  /* --- Índice de usabilidad + fecha de corte --- */
+  const usabIdx=new Map();
+  let corte=null;
+  for(const r of usabRows){
+    const key=normEmail(r["Email"]);
+    const la=toDate(r["Last Active"]);
+    if(la && (!corte || la>corte)) corte=la;
+    if(key) usabIdx.set(key, {...r, __la:la});
+  }
+
+  /* --- Left join + cálculos --- */
+  const filas=[];
+  let nDescartados=0;
+  for(const a of consol){
+    let u=usabIdx.get(a.__key) || null;
+    // La usabilidad SOLO es válida si hay última conexión (Last Active) y es
+    // POSTERIOR O IGUAL a la fecha de asignación. Se descarta el uso cuando:
+    //   - no hay Last Active (aunque haya Days Active u otras métricas), o
+    //   - Last Active es anterior a la fecha de asignación
+    //     (actividad de un titular previo tras retiro/reasignación).
+    if(u){
+      const la=u.__la, fa=a["Fecha"];
+      if(!la || (fa && la < fa)){ u=null; nDescartados++; }
+    }
+    const row={...a};
+    // métricas
+    for(const c of CFG.metricasNum) row[c]= u? num(u[c]) : 0;
+    for(const c of CFG.metricasTxt) row[c]= (u && u[c]!=null)? u[c] : "Sin datos";
+    row["Last Active"]= u? u.__la : null;
+    const tieneUso = !!u;
+
+    // Bloque de días
+    const dcal = a["Fecha"] ? Math.max(0, dayDiff(a["Fecha"], corte)) : 0;
+    row["Días calendario"]=dcal;
+    const dhab = busdayCount(a["Fecha"], corte);
+    row["Días hábiles"]=dhab;
+
+    // % de uso
+    const pct = dhab>0 ? (row["Days Active"]/dhab)*100 : 0;
+    row["% de uso"]=Math.round(pct*10)/10;
+    let nivel=nivelUso(row["% de uso"]);
+    // "Nulo" con menos de 15 días de licencia -> aún no evaluable -> "Reciente"
+    if(nivel==="5.Nulo" && dcal<DIAS_MIN_EVALUACION) nivel="Reciente";
+    row["Nivel de uso"]=nivel;
+
+    // Días sin uso: días HÁBILES entre la última conexión y el corte.
+    // Como la conexión nunca es previa a la asignación, en el peor caso
+    // equivale a los días hábiles. Sin registro -> se usa días hábiles.
+    row["Días sin uso"] = row["Last Active"] ? busdayCount(row["Last Active"], corte) : dhab;
+    // Días desde la última conexión (naturales); sin registro -> días calendario.
+    row["Días desde últ. conexión"] = row["Last Active"] ? Math.max(0, dayDiff(row["Last Active"], corte)) : dcal;
+
+    // Amplitud de adopción (0-5)
+    const cat1=(row["Chats"]+row["Messages"])>0;
+    const cat2=(row["Projects Created"]+row["Projects Used"])>0;
+    const cat3=(row["Code sessions"]+row["File Edits"]+row["Pull Requests"])>0;
+    const cat4=(row["Cowork Sessions"]+row["Cowork Messages"])>0;
+    const cat5=(row["Artifacts Created"])>0;
+    row["Amplitud de adopción (0-5)"]=[cat1,cat2,cat3,cat4,cat5].filter(Boolean).length;
+
+    row["Acción sugerida"]=accionSugerida(row["Nivel de uso"], row["Días sin uso"]);
+    row.__tieneUso=tieneUso;
+    filas.push(row);
+  }
+
+  // Master COMPLETO y VIGENTE (Cantidad lic > 0 para usabilidad).
+  const rowsFull=filas;
+  const rows=filas.filter(r=>num(r["Cantidad lic"])>0);
+  const consolVig=consol.filter(r=>num(r["Cantidad lic"])>0);
+  // Crudo para montos (contabilidad): excluye "Lic. Retirada" y filas vacías.
+  const asigRaw=asigRows.filter(r=>movOf(r)!==CFG.movRetirada
+    && r["User Team"]!=null && String(r["User Team"]).trim()!=="");
+  return {rows, rowsFull, consol:consolVig, corte, nConsol, nSinLic, nRetiradas, nReasig,
+          nDescartados, asigRaw, usaFechaAsig,
+          conUso:rows.filter(f=>f.__tieneUso).length};
+}
+
+/* Consumo de usuarios con Presupuesto Ops > 0, por fecha de asignación. */
+function aggPresupOps(consol){
+  const byDate=new Map();
+  for(const r of consol){
+    if(num(r["Presupuesto Ops"])<=0) continue;
+    const d=r["Fecha"]; if(!d) continue;
+    const k=fmtDate(d);
+    const o=byDate.get(k) || {fecha:new Date(d), users:new Set(), po:0, mxn:0};
+    o.users.add(r.__key); o.po+=num(r["Presupuesto Ops"]); o.mxn+=num(r["Facturado (MXN)"]);
+    byDate.set(k,o);
+  }
+  const arr=[...byDate.values()].sort((a,b)=>a.fecha-b.fecha)
+    .map(o=>({fecha:o.fecha, users:o.users.size, po:o.po, mxn:o.mxn}));
+  const total={users:arr.reduce((s,x)=>s+x.users,0), po:arr.reduce((s,x)=>s+x.po,0), mxn:arr.reduce((s,x)=>s+x.mxn,0)};
+  return {rows:arr, total};
+}
+
+/* ---------- Agregados / indicadores ---------- */
+function aggVolumetria(consol){
+  const byDate=new Map();
+  for(const r of consol){
+    const d=r["Fecha"]; if(!d) continue;
+    const k=fmtDate(d);
+    const o=byDate.get(k) || {fecha:new Date(d), lic:0, users:new Set()};
+    o.lic+=num(r["Cantidad lic"]); o.users.add(r.__key);
+    byDate.set(k,o);
+  }
+  const arr=[...byDate.values()].sort((a,b)=>a.fecha-b.fecha);
+  let cl=0, cu=0;
+  return arr.map(o=>{ cl+=o.lic; cu+=o.users.size;
+    return {fecha:o.fecha, lic:o.lic, users:o.users.size, licAcum:cl, usersAcum:cu}; });
+}
+function aggNiveles(rows){
+  const m=new Map(NIVEL_ORDER.map(o=>[o,{nivel:o,count:0,sum:0}]));
+  for(const r of rows){ const o=m.get(r["Nivel de uso"]); if(o){o.count++; o.sum+=r["% de uso"];} }
+  return NIVEL_ORDER.map(o=>{const x=m.get(o); return {nivel:o,count:x.count,prom:x.count?x.sum/x.count:0};});
+}
+function aggUsoTeam(rows){
+  const m=new Map();
+  for(const r of rows){
+    const t=r["User Team"] ?? "—";
+    const o=m.get(t) || {team:t, n:0, sum:0, da:0};
+    o.n++; o.sum+=r["% de uso"]; o.da+=r["Days Active"];
+    m.set(t,o);
+  }
+  return [...m.values()].map(o=>({team:o.team, users:o.n, prom:o.sum/o.n, daProm:o.da/o.n}))
+    .sort((a,b)=>b.prom-a.prom);
+}
+/* Costo por nivel de uso + clasificación ocioso/productivo. */
+function aggCostoNivel(rows){
+  const m=new Map(NIVEL_ORDER.map(n=>[n,{nivel:n,users:0,usd:0,mxn:0}]));
+  for(const r of rows){ const o=m.get(r["Nivel de uso"]); if(o){
+    o.users++; o.usd+=num(r["Costo anual (USD)"]); o.mxn+=num(r["Facturado (MXN)"]); } }
+  const niv=NIVEL_ORDER.map(n=>({...m.get(n), clasif:CLASIF_NIVEL[n]})).filter(o=>o.users>0);
+  const totalMXN=niv.reduce((s,o)=>s+o.mxn,0);
+  niv.forEach(o=>o.pct = totalMXN? o.mxn/totalMXN*100 : 0);
+  // Resumen por clasificación.
+  const cm=new Map();
+  for(const o of niv){ const c=cm.get(o.clasif) || {clasif:o.clasif,users:0,usd:0,mxn:0};
+    c.users+=o.users; c.usd+=o.usd; c.mxn+=o.mxn; cm.set(o.clasif,c); }
+  const orden={"Productivo":0,"En adopción":1,"Ocioso":2};
+  const aprov=[...cm.values()].sort((a,b)=>orden[a.clasif]-orden[b.clasif]);
+  aprov.forEach(c=>c.pct = totalMXN? c.mxn/totalMXN*100 : 0);
+  return {niv, aprov, totalMXN, totalUSD:niv.reduce((s,o)=>s+o.usd,0),
+    totalUsers:niv.reduce((s,o)=>s+o.users,0)};
+}
+/* Monto por User Team desde los registros CRUDOS (coincide con la
+   contabilidad / tabla dinámica): cada registro suma en el equipo donde se
+   facturó, incluso si un usuario tiene upgrade en dos equipos distintos. */
+function aggTeams(asigRaw){
+  const m=new Map();
+  for(const r of asigRaw){
+    const t=r["User Team"] ?? "—";
+    const o=m.get(t) || {team:t, regs:0, lic:0, usd:0, fusd:0, mxn:0, po:0};
+    o.regs++;
+    o.lic+=num(r["Cantidad lic"]); o.usd+=num(r["Costo anual (USD)"]);
+    o.fusd+=num(r["Facturado (USD)"]); o.mxn+=num(r["Facturado (MXN)"]);
+    o.po+=num(r["Presupuesto Ops"]);
+    m.set(t,o);
+  }
+  return [...m.values()].map(o=>({team:o.team, regs:o.regs, users:o.regs, lic:o.lic,
+    usd:o.usd, fusd:o.fusd, mxn:o.mxn, po:o.po})).sort((a,b)=>b.mxn-a.mxn);
+}
+
+/* ===================================================================== *
+ *  Render de gráficos (SVG propio, con hover)
+ * ===================================================================== */
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs={},kids=[]){
+  const e=document.createElementNS(NS,tag);
+  for(const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+  for(const c of [].concat(kids)) if(c!=null) e.appendChild(typeof c==="string"?document.createTextNode(c):c);
+  return e;
+}
+const tt=$("#tt");
+function showTT(html,evt){ tt.innerHTML=html; tt.style.opacity=1;
+  const pad=14; let x=evt.clientX+pad, y=evt.clientY+pad;
+  const r=tt.getBoundingClientRect();
+  if(x+r.width>innerWidth) x=evt.clientX-r.width-pad;
+  if(y+r.height>innerHeight) y=evt.clientY-r.height-pad;
+  tt.style.left=x+"px"; tt.style.top=y+"px";
+}
+function hideTT(){ tt.style.opacity=0; }
+function cssv(n){ return getComputedStyle(document.body).getPropertyValue(n).trim(); }
+
+function niceMax(v){
+  if(v<=0) return 5;
+  const p=Math.pow(10,Math.floor(Math.log10(v)));
+  const s=[1,2,2.5,5,10];
+  for(const k of s){ if(p*k>=v) return p*k; }
+  return p*10;
+}
+
+/* Gráfico de líneas (volumetría) con 2 series y crosshair */
+function lineChart(host, data){
+  host.innerHTML="";
+  const W=host.clientWidth||760, H=320;
+  const m={t:16,r:16,b:46,l:44};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  if(!data.length){ host.appendChild(svg); return; }
+  const maxY=niceMax(Math.max(...data.map(d=>Math.max(d.licAcum,d.usersAcum))));
+  const n=data.length;
+  const x=i=> m.l + (n===1? iw/2 : iw*i/(n-1));
+  const y=v=> m.t + ih - ih*(v/maxY);
+
+  // grid + eje Y
+  const ticks=5;
+  for(let i=0;i<=ticks;i++){
+    const v=maxY*i/ticks, yy=y(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
+    svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, fmtInt(v)));
+  }
+  // eje X (fechas)
+  const step=Math.ceil(n/7);
+  data.forEach((d,i)=>{ if(i%step===0||i===n-1){
+    svg.appendChild(el("text",{x:x(i),y:H-m.b+18,"text-anchor":"middle"}, fmtDate(d.fecha).slice(5)));
+  }});
+  svg.appendChild(el("line",{class:"axis-line",x1:m.l,y1:m.t+ih,x2:m.l+iw,y2:m.t+ih}));
+
+  const series=[
+    {key:"licAcum", color:cssv("--series-1"), name:"Licencias acumuladas"},
+    {key:"usersAcum", color:cssv("--series-3"), name:"Usuarios acumulados"},
+  ];
+  for(const s of series){
+    const pts=data.map((d,i)=>`${x(i)},${y(d[s.key])}`).join(" ");
+    if(n>1) svg.appendChild(el("polyline",{points:pts,fill:"none",stroke:s.color,"stroke-width":2.25,"stroke-linejoin":"round","stroke-linecap":"round"}));
+    data.forEach((d,i)=> svg.appendChild(el("circle",{cx:x(i),cy:y(d[s.key]),r:3.5,fill:s.color,stroke:cssv("--surface"),"stroke-width":1.5})));
+  }
+  // capa de hover (crosshair)
+  const cross=el("line",{x1:0,y1:m.t,x2:0,y2:m.t+ih,stroke:cssv("--border-strong"),"stroke-width":1,opacity:0});
+  svg.appendChild(cross);
+  const hit=el("rect",{x:m.l,y:m.t,width:iw,height:ih,fill:"transparent"});
+  hit.addEventListener("mousemove",ev=>{
+    const bb=svg.getBoundingClientRect();
+    const px=(ev.clientX-bb.left)*(W/bb.width);
+    let idx=0,best=1e9;
+    data.forEach((d,i)=>{const dd=Math.abs(x(i)-px); if(dd<best){best=dd;idx=i;}});
+    const d=data[idx];
+    cross.setAttribute("x1",x(idx)); cross.setAttribute("x2",x(idx)); cross.setAttribute("opacity",1);
+    showTT(`<div class="tt-t">${fmtDate(d.fecha)}</div>
+      <div class="tt-r"><span class="k"><span class="sw" style="width:9px;height:9px;border-radius:2px;display:inline-block;background:${series[0].color}"></span>Licencias</span><b>${fmtInt(d.licAcum)}</b></div>
+      <div class="tt-r"><span class="k"><span class="sw" style="width:9px;height:9px;border-radius:2px;display:inline-block;background:${series[1].color}"></span>Usuarios</span><b>${fmtInt(d.usersAcum)}</b></div>
+      <div class="tt-r"><span class="k">+ en la fecha</span><b>${fmtInt(d.lic)} lic</b></div>`, ev);
+  });
+  hit.addEventListener("mouseleave",()=>{cross.setAttribute("opacity",0); hideTT();});
+  svg.appendChild(hit);
+  host.appendChild(svg);
+}
+
+/* Color CSS por nivel (soporta "Reciente"). */
+function nivelColor(nivel){
+  const cls=NIVEL_CLS[nivel];
+  return cls==="lr" ? cssv("--lvl-rec") : cssv("--lvl-"+cls.slice(1));
+}
+/* Columnas verticales (niveles) — clic en cada barra dispara onClick(nivel). */
+function columnChart(host, data, onClick){
+  host.innerHTML="";
+  const W=host.clientWidth||460, H=300;
+  const m={t:24,r:12,b:52,l:40};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  const maxY=niceMax(Math.max(1,...data.map(d=>d.count)));
+  const y=v=> m.t+ih-ih*(v/maxY);
+  const bw=iw/data.length*0.64, gap=iw/data.length;
+  for(let i=0;i<=4;i++){ const v=maxY*i/4, yy=y(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
+    svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, fmtInt(v)));
+  }
+  data.forEach((d,i)=>{
+    const cx=m.l+gap*i+gap/2, bh=ih-(y(d.count)-m.t), bx=cx-bw/2, by=y(d.count);
+    const color=nivelColor(d.nivel);
+    const sel = SEL_NIVEL===d.nivel;
+    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:color,
+      style:"cursor:pointer",opacity: (SEL_NIVEL&&!sel)?0.45:1});
+    if(sel) rect.setAttribute("stroke", cssv("--text")), rect.setAttribute("stroke-width","2");
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.nivel}</div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.count)}</b></div>
+      <div class="tt-r"><span class="k">% uso prom.</span><b>${fmtNum(d.prom)}%</b></div>
+      <div class="tt-r"><span class="k muted">clic para ver la lista</span></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    if(onClick) rect.addEventListener("click",()=>onClick(d.nivel));
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:cx,y:by-7,"text-anchor":"middle"}, fmtInt(d.count)));
+    // etiqueta de nivel (2 líneas: número/nombre)
+    const lbl=d.nivel.replace(/^\d\./,"");
+    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, lbl));
+  });
+  host.appendChild(svg);
+}
+
+/* Barras horizontales (monto por team) — hue secuencial único */
+function barChart(host, data, valKey, fmtFn){
+  host.innerHTML="";
+  const rows=data.slice(0,12);
+  const W=host.clientWidth||420, rowH=26, H=rows.length*rowH+30;
+  const m={t:8,r:16,b:8,l:118};
+  const iw=W-m.l-m.r;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  const maxV=Math.max(1,...rows.map(d=>d[valKey]));
+  const color=cssv("--seq");
+  rows.forEach((d,i)=>{
+    const y=m.t+i*rowH, bw=iw*(d[valKey]/maxV);
+    svg.appendChild(el("text",{x:m.l-8,y:y+rowH/2,"text-anchor":"end","dominant-baseline":"middle"},
+      d.team.length>16?d.team.slice(0,15)+"…":d.team));
+    const rect=el("rect",{x:m.l,y:y+4,width:Math.max(1,bw),height:rowH-10,rx:4,fill:color});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.team}</div>
+      <div class="tt-r"><span class="k">Facturado</span><b>${fmtMXN(d.mxn)}</b></div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">Licencias</span><b>${fmtInt(d.lic)}</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:m.l+bw+6,y:y+rowH/2,"dominant-baseline":"middle"}, fmtFn(d[valKey])));
+  });
+  host.appendChild(svg);
+}
+
+/* Barras horizontales: promedio de % de uso por User Team. */
+function pctBarChart(host, data){
+  host.innerHTML="";
+  const rows=data.slice(0,14);
+  const W=host.clientWidth||460, rowH=26, H=rows.length*rowH+34;
+  const m={t:8,r:44,b:22,l:120};
+  const iw=W-m.l-m.r;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  const maxV=Math.max(100,...rows.map(d=>d.prom)); // referencia mínima 100%
+  // línea de referencia 100%
+  const x100=m.l+iw*(100/maxV);
+  svg.appendChild(el("line",{x1:x100,y1:m.t-2,x2:x100,y2:m.t+rows.length*rowH,
+    stroke:cssv("--border-strong"),"stroke-dasharray":"3 3"}));
+  svg.appendChild(el("text",{x:x100,y:H-6,"text-anchor":"middle"},"100%"));
+  rows.forEach((d,i)=>{
+    const y=m.t+i*rowH, bw=iw*(Math.min(d.prom,maxV)/maxV);
+    // color según nivel promedio (semáforo)
+    const color=nivelColor(nivelUso(d.prom));
+    svg.appendChild(el("text",{x:m.l-8,y:y+rowH/2,"text-anchor":"end","dominant-baseline":"middle"},
+      d.team.length>17?d.team.slice(0,16)+"…":d.team));
+    const rect=el("rect",{x:m.l,y:y+4,width:Math.max(1,bw),height:rowH-10,rx:4,fill:color});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.team}</div>
+      <div class="tt-r"><span class="k">% de uso prom.</span><b>${fmtNum(d.prom)}%</b></div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">Días activos prom.</span><b>${fmtNum(d.daProm)}</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:m.l+bw+6,y:y+rowH/2,"dominant-baseline":"middle"}, fmtNum(d.prom)+"%"));
+  });
+  host.appendChild(svg);
+}
+
+/* ===================================================================== *
+ *  Render de KPIs y tablas
+ * ===================================================================== */
+function renderKPIs(P){
+  const totalLic=P.consol.reduce((s,r)=>s+num(r["Cantidad lic"]),0);
+  // Facturado total: contable bruto (todos los registros), coincide con la
+  // tabla dinámica administrativa.
+  const totalMXN=P.asigRaw.reduce((s,r)=>s+num(r["Facturado (MXN)"]),0);
+  const usados=P.rows.filter(r=>r["Days Active"]>0);
+  const promUso=usados.length? usados.reduce((s,r)=>s+r["% de uso"],0)/usados.length : 0;
+  const sinUso=P.rows.length-P.conUso;
+  const reasignar=P.rows.filter(r=>r["Acción sugerida"]==="Reasignar / cancelar").length;
+  // Monto ocioso (Bajo/Nulo) sobre el costo total del proyecto.
+  const cn=aggCostoNivel(P.rowsFull);
+  const ocioso=cn.aprov.find(c=>c.clasif==="Ocioso") || {mxn:0,pct:0,users:0};
+  const items=[
+    {l:"Licencias activas", v:fmtInt(P.rows.length), f:`${P.nReasig} reasignada(s) · ${P.nRetiradas} retirada(s) excluida(s)`, c:"--brand"},
+    {l:"Licencias asignadas", v:fmtInt(totalLic), f:`${P.conUso} con datos de uso · ${sinUso} sin uso`, c:"--series-1"},
+    {l:"Facturado total", v:fmtMXN(totalMXN), f:"MXN contable (todos los registros)", c:"--brand-2"},
+    {l:"Monto ocioso", v:fmtMXN(ocioso.mxn), f:`${fmtNum(ocioso.pct)}% del facturado · nivel Bajo/Nulo`, c:"--lvl-5"},
+    {l:"% de uso promedio", v:fmtNum(promUso)+"%", f:"sobre usuarios con actividad", c:"--lvl-2"},
+    {l:"A reasignar / cancelar", v:fmtInt(reasignar), f:"usuarios en nivel Nulo", c:"--lvl-4"},
+  ];
+  $("#kpis").innerHTML=items.map(k=>`
+    <div class="kpi">
+      <div class="label">${k.l}</div>
+      <div class="val">${k.v}</div>
+      <div class="foot">${k.f}</div>
+      <div class="bar-accent" style="background:var(${k.c})"></div>
+    </div>`).join("");
+  $("#kpiSub").textContent=`corte ${fmtDate(P.corte)}`
+    + ` · fecha de asignación: ${P.usaFechaAsig?"Fecha Asig":"Fecha"}`
+    + (P.nDescartados? ` · ${P.nDescartados} usabilidad(es) descartada(s) (sin conexión o previa a la asignación)` : "")
+    + (P.nSinLic? ` · ${P.nSinLic} sin licencia vigente` : "");
+}
+
+function renderTeams(teams){
+  const total=teams.reduce((a,t)=>({regs:a.regs+t.regs,lic:a.lic+t.lic,usd:a.usd+t.usd,fusd:a.fusd+t.fusd,mxn:a.mxn+t.mxn,po:a.po+t.po}),
+    {regs:0,lic:0,usd:0,fusd:0,mxn:0,po:0});
+  const head=`<thead><tr>
+    <th>User Team</th><th class="num">Registros</th><th class="num">Licencias</th>
+    <th class="num">Costo anual (USD)</th><th class="num">Facturado (USD)</th>
+    <th class="num">Facturado (MXN)</th><th class="num">Presupuesto Ops</th>
+    </tr></thead>`;
+  const body=teams.map(t=>`<tr>
+    <td>${t.team}</td><td class="num">${fmtInt(t.regs)}</td><td class="num">${fmtInt(t.lic)}</td>
+    <td class="num">${fmtMXN(t.usd)}</td><td class="num">${fmtMXN(t.fusd)}</td>
+    <td class="num">${fmtMXN(t.mxn)}</td><td class="num">${fmtMXN(t.po)}</td>
+    </tr>`).join("");
+  const totalRow=`<tr class="total"><td>TOTAL</td><td class="num">${fmtInt(total.regs)}</td>
+    <td class="num">${fmtInt(total.lic)}</td><td class="num">${fmtMXN(total.usd)}</td>
+    <td class="num">${fmtMXN(total.fusd)}</td><td class="num">${fmtMXN(total.mxn)}</td>
+    <td class="num">${fmtMXN(total.po)}</td></tr>`;
+  $("#tblTeams").innerHTML=head+"<tbody>"+body+totalRow+"</tbody>";
+}
+
+// Tabla de usabilidad de TODOS los usuarios, con filtros multi-nivel y multi-equipo.
+let USAB=[];
+let USAB_LEVELS=new Set(NIVEL_ORDER);  // niveles seleccionados (por defecto todos)
+let USAB_TEAMS=null;                   // equipos seleccionados (null = todos)
+function renderUsab(rows){
+  USAB=[...rows].sort((a,b)=>
+      (NIVEL_ORDER.indexOf(a["Nivel de uso"])-NIVEL_ORDER.indexOf(b["Nivel de uso"]))
+      || String(a["User Team"]).localeCompare(String(b["User Team"]))
+      || a["% de uso"]-b["% de uso"]);
+  USAB_TEAMS=new Set(USAB.map(r=>r["User Team"]??"—"));  // por defecto, todos
+  drawLevelChips();
+  drawTeamChips();
+  drawUsab();
+}
+function drawTeamChips(){
+  const counts={};
+  USAB.forEach(r=>{const t=r["User Team"]??"—"; counts[t]=(counts[t]||0)+1;});
+  const present=Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||a.localeCompare(b));
+  const allOn=present.every(t=>USAB_TEAMS.has(t));
+  let html=`<span class="lvl-chip all ${allOn?'on':'off'}" data-team="__all"
+      style="${allOn?'background:var(--brand)':''}">Todos</span>`;
+  html+=present.map(t=>{
+    const on=USAB_TEAMS.has(t);
+    return `<span class="lvl-chip ${on?'on':'off'}" data-team="${t.replace(/"/g,'&quot;')}"
+        style="${on?'background:var(--brand-2)':''}">${t}
+        <span class="cnt">${counts[t]}</span></span>`;
+  }).join("");
+  const host=$("#usabTeams"); host.innerHTML=html;
+  host.querySelectorAll(".lvl-chip").forEach(ch=>ch.onclick=()=>{
+    const t=ch.dataset.team;
+    if(t==="__all"){
+      USAB_TEAMS = present.every(x=>USAB_TEAMS.has(x)) ? new Set() : new Set(present);
+    }else{
+      if(USAB_TEAMS.has(t)) USAB_TEAMS.delete(t); else USAB_TEAMS.add(t);
+    }
+    drawTeamChips(); drawUsab();
+  });
+}
+function drawLevelChips(){
+  const counts={}; NIVEL_ORDER.forEach(n=>counts[n]=0);
+  USAB.forEach(r=>counts[r["Nivel de uso"]]++);
+  const present=NIVEL_ORDER.filter(n=>counts[n]>0);
+  const allOn=present.every(n=>USAB_LEVELS.has(n));
+  let html=`<span class="lvl-chip all ${allOn?'on':'off'}" data-lvl="__all"
+      style="${allOn?'background:var(--brand)':''}">Todos</span>`;
+  html+=present.map(n=>{
+    const on=USAB_LEVELS.has(n), color=nivelColor(n);
+    return `<span class="lvl-chip ${on?'on':'off'}" data-lvl="${n}"
+        style="${on?`background:${color}`:''}">
+        <span class="dot" style="background:${on?'#fff':color}"></span>${n}
+        <span class="cnt">${counts[n]}</span></span>`;
+  }).join("");
+  const host=$("#usabLevels"); host.innerHTML=html;
+  host.querySelectorAll(".lvl-chip").forEach(ch=>ch.onclick=()=>{
+    const lvl=ch.dataset.lvl;
+    if(lvl==="__all"){
+      if(present.every(n=>USAB_LEVELS.has(n))) USAB_LEVELS=new Set();
+      else USAB_LEVELS=new Set(present);
+    }else{
+      if(USAB_LEVELS.has(lvl)) USAB_LEVELS.delete(lvl); else USAB_LEVELS.add(lvl);
+    }
+    drawLevelChips(); drawUsab();
+  });
+}
+function drawUsab(){
+  const q=$("#bajaSearch").value.trim().toLowerCase();
+  const f=USAB.filter(r=> USAB_LEVELS.has(r["Nivel de uso"])
+    && (!USAB_TEAMS || USAB_TEAMS.has(r["User Team"]??"—"))
+    && (!q || [r["Nombre"],r["Correo electrónico"],r["User Team"]].join(" ").toLowerCase().includes(q)));
+  const head=`<thead><tr><th>Nombre</th><th>Correo</th><th>User Team</th>
+    <th>Nivel</th><th class="num">% uso</th><th class="num">Última conexión</th>
+    <th class="num">Días desde conexión</th>
+    <th class="num">Días activos</th><th class="num">Días hábiles</th>
+    <th class="num">Días sin uso (háb.)</th><th>Acción sugerida</th></tr></thead>`;
+  const body=f.map(r=>`<tr>
+      <td>${r["Nombre"]??""}</td><td>${r["Correo electrónico"]??""}</td>
+      <td><span class="tag">${r["User Team"]??""}</span></td>
+      <td><span class="pill ${NIVEL_CLS[r["Nivel de uso"]]}">${r["Nivel de uso"]}</span></td>
+      <td class="num">${fmtNum(r["% de uso"])}</td>
+      <td class="num">${r["Last Active"]?fmtDate(r["Last Active"]):'<span class="muted">Sin registro</span>'}</td>
+      <td class="num">${fmtInt(r["Días desde últ. conexión"])}</td>
+      <td class="num">${fmtInt(r["Days Active"])}</td><td class="num">${fmtInt(r["Días hábiles"])}</td>
+      <td class="num">${fmtInt(r["Días sin uso"])}</td>
+      <td>${r["Acción sugerida"]}</td></tr>`).join("");
+  $("#tblBaja").innerHTML=head+"<tbody>"+(body||'<tr><td colspan="11" class="muted" style="text-align:center;padding:18px">Selecciona al menos un nivel y un equipo</td></tr>')+"</tbody>";
+  const nteams=new Set(f.map(r=>r["User Team"])).size;
+  $("#bajaCount").textContent=`${f.length} usuario(s) · ${USAB_LEVELS.size} nivel(es) · ${nteams} equipo(s)`;
+}
+
+const DET_COLS=[
+  {k:"Nombre",t:"Nombre"},{k:"Correo electrónico",t:"Correo"},{k:"User Team",t:"User Team"},
+  {k:"Licencia",t:"Licencia"},{k:"Fecha",t:"Fecha asig.",d:1},
+  {k:"Días calendario",t:"Días cal.",n:1},{k:"Días hábiles",t:"Días háb.",n:1},
+  {k:"Días sin uso",t:"Días sin uso (háb.)",n:1},{k:"Días desde últ. conexión",t:"Días desde conexión",n:1},
+  {k:"Days Active",t:"Días activos",n:1},{k:"% de uso",t:"% uso",n:1,dec:1},
+  {k:"Nivel de uso",t:"Nivel",p:1},{k:"Amplitud de adopción (0-5)",t:"Amplitud",n:1},
+  {k:"Acción sugerida",t:"Acción"},
+];
+let DET=[], detSort={k:"% de uso",dir:-1};
+function renderDet(rows){
+  DET=rows;
+  const niveles=[...new Set(rows.map(r=>r["Nivel de uso"]))].sort();
+  $("#detNivel").innerHTML='<option value="">Todos los niveles</option>'+niveles.map(n=>`<option>${n}</option>`).join("");
+  const teams=[...new Set(rows.map(r=>r["User Team"]))].sort();
+  $("#detTeam").innerHTML='<option value="">Todos los equipos</option>'+teams.map(n=>`<option>${n}</option>`).join("");
+  const accs=[...new Set(rows.map(r=>r["Acción sugerida"]))].sort();
+  $("#detAccion").innerHTML='<option value="">Todas las acciones</option>'+accs.map(n=>`<option>${n}</option>`).join("");
+  drawDet();
+}
+function drawDet(){
+  const q=$("#detSearch").value.trim().toLowerCase();
+  const fn=$("#detNivel").value, ft=$("#detTeam").value, fa=$("#detAccion").value;
+  let f=DET.filter(r=>{
+    if(fn && r["Nivel de uso"]!==fn) return false;
+    if(ft && r["User Team"]!==ft) return false;
+    if(fa && r["Acción sugerida"]!==fa) return false;
+    if(q && !DET_COLS.some(c=>String(r[c.k]??"").toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const s=detSort;
+  f.sort((a,b)=>{ let x=a[s.k],y=b[s.k];
+    if(s.k==="Fecha"){x=x?+new Date(x):0;y=y?+new Date(y):0;}
+    if(typeof x==="number"&&typeof y==="number") return (x-y)*s.dir;
+    return String(x??"").localeCompare(String(y??""))*s.dir; });
+  const head="<thead><tr>"+DET_COLS.map(c=>{
+    const arrow=detSort.k===c.k?(detSort.dir<0?" ▼":" ▲"):"";
+    return `<th class="${c.n||c.dec?'num':''}" data-k="${c.k}">${c.t}${arrow}</th>`;}).join("")+"</tr></thead>";
+  const body=f.map(r=>"<tr>"+DET_COLS.map(c=>{
+    let v=r[c.k];
+    if(c.d) v=fmtDate(v);
+    else if(c.p) return `<td><span class="pill ${NIVEL_CLS[v]}">${v}</span></td>`;
+    else if(c.dec) v=fmtNum(v);
+    else if(c.n) v=fmtInt(v);
+    return `<td class="${c.n||c.dec?'num':''}">${v??""}</td>`;
+  }).join("")+"</tr>").join("");
+  const tbl=$("#tblDet");
+  tbl.innerHTML=head+"<tbody>"+body+"</tbody>";
+  tbl.querySelectorAll("th").forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; detSort = detSort.k===k?{k,dir:-detSort.dir}:{k,dir:1}; drawDet();
+  });
+  $("#detCount").textContent=`${f.length} de ${DET.length} usuario(s)`;
+}
+
+/* Tabla de consumo — usuarios con Presupuesto Ops > 0, por fecha. */
+function renderPresupOps(po){
+  $("#poSub").innerHTML=`<b>${fmtInt(po.total.users)}</b> usuario(s) con Presupuesto Ops · `
+    +`Total en pesos: <b>${fmtMXN(po.total.po)} MXN</b>`;
+  const head=`<thead><tr><th>Fecha de asignación</th><th class="num">Usuarios</th>
+    <th class="num">Presupuesto Ops (MXN)</th><th class="num">Facturado (MXN)</th></tr></thead>`;
+  const body=po.rows.map(r=>`<tr>
+    <td>${fmtDate(r.fecha)}</td><td class="num">${fmtInt(r.users)}</td>
+    <td class="num">${fmtMXN(r.po)}</td><td class="num">${fmtMXN(r.mxn)}</td></tr>`).join("");
+  const total=`<tr class="total"><td>TOTAL</td><td class="num">${fmtInt(po.total.users)}</td>
+    <td class="num">${fmtMXN(po.total.po)}</td><td class="num">${fmtMXN(po.total.mxn)}</td></tr>`;
+  $("#tblPresupOps").innerHTML=head+"<tbody>"+body+total+"</tbody>";
+}
+
+/* Costo por nivel de uso: tiles, barra apilada, gráfico y tabla. */
+function renderCostoNivel(cn){
+  // Tiles de aprovechamiento.
+  $("#aprovTiles").innerHTML=cn.aprov.map(c=>`
+    <div class="kpi">
+      <div class="label">Monto ${c.clasif.toLowerCase()}</div>
+      <div class="val">${fmtMXN(c.mxn)}</div>
+      <div class="foot">${fmtInt(c.users)} usuario(s) · ${fmtNum(c.pct)}% del facturado</div>
+      <div class="bar-accent" style="background:${CLASIF_COLOR[c.clasif]}"></div>
+    </div>`).join("");
+  // Barra apilada (distribución del facturado).
+  const seg=cn.aprov.map(c=>{const w=cn.totalMXN? c.mxn/cn.totalMXN*100:0;
+    return `<div class="seg" style="width:${w}%;background:${CLASIF_COLOR[c.clasif]}"
+      title="${c.clasif}: ${fmtMXN(c.mxn)}">${w>7?fmtNum(c.pct)+'%':''}</div>`;}).join("");
+  const leg=cn.aprov.map(c=>`<span class="it"><span class="sw" style="background:${CLASIF_COLOR[c.clasif]}"></span>
+    ${c.clasif}: <b>${fmtMXN(c.mxn)}</b> (${fmtNum(c.pct)}%)</span>`).join("");
+  $("#aprovBar").innerHTML=`<div class="stackbar">${seg}</div><div class="stackleg">${leg}</div>`;
+  // Tabla por nivel.
+  const head=`<thead><tr><th>Nivel de uso</th><th>Clasificación</th><th class="num">Usuarios</th>
+    <th class="num">Costo anual (USD)</th><th class="num">Facturado (MXN)</th><th class="num">% del facturado</th></tr></thead>`;
+  const body=cn.niv.map(o=>`<tr>
+    <td><span class="pill ${NIVEL_CLS[o.nivel]}">${o.nivel}</span></td>
+    <td><span class="tag" style="border-color:${CLASIF_COLOR[o.clasif]};color:${CLASIF_COLOR[o.clasif]}">${o.clasif}</span></td>
+    <td class="num">${fmtInt(o.users)}</td><td class="num">${fmtMXN(o.usd)}</td>
+    <td class="num">${fmtMXN(o.mxn)}</td><td class="num">${fmtNum(o.pct)}%</td></tr>`).join("");
+  const total=`<tr class="total"><td>TOTAL</td><td></td><td class="num">${fmtInt(cn.totalUsers)}</td>
+    <td class="num">${fmtMXN(cn.totalUSD)}</td><td class="num">${fmtMXN(cn.totalMXN)}</td><td class="num">100%</td></tr>`;
+  $("#tblCostoNivel").innerHTML=head+"<tbody>"+body+total+"</tbody>";
+}
+
+/* Columnas: Facturado (MXN) por nivel de uso (color por nivel). */
+function costoNivelChart(host, cn){
+  host.innerHTML="";
+  const data=cn.niv;
+  const W=host.clientWidth||720, H=300, m={t:24,r:14,b:44,l:70};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  if(!data.length){ host.appendChild(svg); return; }
+  const maxY=niceMax(Math.max(1,...data.map(d=>d.mxn)));
+  const y=v=> m.t+ih-ih*(v/maxY);
+  const gap=iw/data.length, bw=gap*0.62;
+  for(let i=0;i<=4;i++){ const v=maxY*i/4, yy=y(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
+    svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, "$"+fmtInt(v)));
+  }
+  data.forEach((d,i)=>{
+    const cx=m.l+gap*i+gap/2, by=y(d.mxn), bh=ih-(by-m.t), bx=cx-bw/2;
+    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:nivelColor(d.nivel)});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${d.nivel} · ${d.clasif}</div>
+      <div class="tt-r"><span class="k">Facturado</span><b>${fmtMXN(d.mxn)}</b></div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">% del total</span><b>${fmtNum(d.pct)}%</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:cx,y:by-7,"text-anchor":"middle"}, fmtNum(d.pct)+"%"));
+    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, d.nivel.replace(/^\d\./,"")));
+  });
+  host.appendChild(svg);
+}
+
+/* Columnas: Presupuesto Ops (MXN) por fecha de asignación. */
+function presupOpsChart(host, po){
+  host.innerHTML="";
+  const data=po.rows;
+  const W=host.clientWidth||760, H=300, m={t:24,r:14,b:44,l:64};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b;
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", height:H});
+  if(!data.length){ host.appendChild(svg); return; }
+  const maxY=niceMax(Math.max(1,...data.map(d=>d.po)));
+  const y=v=> m.t+ih-ih*(v/maxY);
+  const gap=iw/data.length, bw=gap*0.6;
+  for(let i=0;i<=4;i++){ const v=maxY*i/4, yy=y(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:m.l,y1:yy,x2:m.l+iw,y2:yy}));
+    svg.appendChild(el("text",{x:m.l-8,y:yy+4,"text-anchor":"end"}, "$"+fmtInt(v)));
+  }
+  data.forEach((d,i)=>{
+    const cx=m.l+gap*i+gap/2, by=y(d.po), bh=ih-(by-m.t), bx=cx-bw/2;
+    const rect=el("rect",{x:bx,y:by,width:bw,height:Math.max(0,bh),rx:4,fill:cssv("--brand-2")});
+    rect.addEventListener("mousemove",ev=>showTT(`<div class="tt-t">${fmtDate(d.fecha)}</div>
+      <div class="tt-r"><span class="k">Usuarios</span><b>${fmtInt(d.users)}</b></div>
+      <div class="tt-r"><span class="k">Presupuesto Ops</span><b>${fmtMXN(d.po)}</b></div>`,ev));
+    rect.addEventListener("mouseleave",hideTT);
+    svg.appendChild(rect);
+    svg.appendChild(el("text",{class:"lbl",x:cx,y:by-7,"text-anchor":"middle"}, fmtInt(d.users)+"u"));
+    svg.appendChild(el("text",{x:cx,y:H-m.b+18,"text-anchor":"middle"}, fmtDate(d.fecha).slice(5)));
+  });
+  host.appendChild(svg);
+}
+
+/* ===================================================================== *
+ *  Orquestación: estado, render global, persistencia, IO
+ * ===================================================================== */
+let STATE=null;
+let SEL_NIVEL=null;  // segmento de nivel seleccionado en la gráfica (clic)
+
+/* Lista de usuarios del nivel seleccionado, bajo la gráfica de niveles. */
+function drawNivList(){
+  const host=$("#nivList");
+  if(!SEL_NIVEL){ host.className="niv-list empty"; host.innerHTML=""; return; }
+  const us=STATE.rows.filter(r=>r["Nivel de uso"]===SEL_NIVEL)
+    .sort((a,b)=>a["% de uso"]-b["% de uso"]);
+  host.className="niv-list";
+  const chips=us.map(r=>`<div class="chip">
+      <b>${r["Nombre"]??"—"}</b>
+      <span>${r["Correo electrónico"]??""}</span>
+      <span>${r["User Team"]??""} · ${fmtNum(r["% de uso"])}% uso</span>
+    </div>`).join("");
+  host.innerHTML=`<div class="nl-head">
+      <span class="pill ${NIVEL_CLS[SEL_NIVEL]}">${SEL_NIVEL}</span>
+      <b>${us.length} usuario(s)</b>
+      <button class="btn ghost close" id="nivClose">✕ Cerrar</button>
+    </div><div class="niv-chips">${chips||'<span class="muted">Sin usuarios</span>'}</div>`;
+  $("#nivClose").onclick=()=>{ SEL_NIVEL=null; drawNivList(); columnChart($("#chNiveles"), STATE.__niveles, onNivClick); };
+}
+function onNivClick(nivel){
+  SEL_NIVEL = (SEL_NIVEL===nivel)? null : nivel;
+  drawNivList();
+  columnChart($("#chNiveles"), STATE.__niveles, onNivClick);
+}
+
+function renderAll(P){
+  STATE=P; window.STATE=P; SEL_NIVEL=null;
+  
+  $("#app").style.display="block";
+  $("#cutBox").hidden=false;
+  $("#cutDate").textContent=fmtDate(P.corte);
+  $("#exportBtn").disabled=false;
+
+  renderKPIs(P);
+  const volum=aggVolumetria(P.consol);
+  const niveles=aggNiveles(P.rows);
+  const teams=aggTeams(P.asigRaw);
+  const usoteam=aggUsoTeam(P.rows);
+  const presupops=aggPresupOps(P.consol);
+  const costonivel=aggCostoNivel(P.rowsFull);  // completo: total real del proyecto
+  STATE.__niveles=niveles;
+  lineChart($("#chVolum"), volum);
+  columnChart($("#chNiveles"), niveles, onNivClick);
+  barChart($("#chTeams"), teams, "mxn", fmtMXN);
+  pctBarChart($("#chUsoTeam"), usoteam);
+  presupOpsChart($("#chPresupOps"), presupops);
+  costoNivelChart($("#chCostoNivel"), costonivel);
+  renderTeams(teams);
+  renderUsab(P.rows);
+  renderPresupOps(presupops);
+  renderCostoNivel(costonivel);
+  renderDet(P.rows);
+  drawNivList();
+  STATE.__redraw=()=>{ lineChart($("#chVolum"),volum); columnChart($("#chNiveles"),niveles,onNivClick);
+    barChart($("#chTeams"),teams,"mxn",fmtMXN); pctBarChart($("#chUsoTeam"),usoteam);
+    presupOpsChart($("#chPresupOps"),presupops); costoNivelChart($("#chCostoNivel"),costonivel); };
+}
+
+function leerLibro(arrayBuffer){
+  const wb=XLSX.read(arrayBuffer,{type:"array",cellDates:true});
+  const names=wb.SheetNames;
+  const findSheet=target=>{
+    const t=target.toLowerCase();
+    return names.find(n=>n.toLowerCase()===t) ||
+           names.find(n=>n.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+             === t.normalize("NFD").replace(/[̀-ͯ]/g,""));
+  };
+  const sa=findSheet(CFG.hojaAsig), su=findSheet(CFG.hojaUsab);
+  if(!sa||!su) throw new Error(`El archivo debe contener las pestañas «${CFG.hojaAsig}» y «${CFG.hojaUsab}». Encontradas: ${names.join(", ")}`);
+  // Recorta espacios en los nombres de columna y descarta columnas vacías
+  // (algunas cabeceras del origen traen espacios iniciales/finales).
+  const trimKeys=rows=>rows.map(r=>{
+    const o={};
+    for(const [k,v] of Object.entries(r)){
+      if(/^__EMPTY/.test(k)) continue;
+      o[String(k).trim()]=v;
+    }
+    return o;
+  });
+  const asig=trimKeys(XLSX.utils.sheet_to_json(wb.Sheets[sa],{defval:null}));
+  const usab=trimKeys(XLSX.utils.sheet_to_json(wb.Sheets[su],{defval:null}));
+  if(!asig.length) throw new Error("La pestaña «Asignación» está vacía.");
+  if(!asig[0].hasOwnProperty("Correo electrónico")) throw new Error("«Asignación» no tiene la columna «Correo electrónico».");
+  if(!usab.length || !usab[0].hasOwnProperty("Email")) throw new Error("«Usabilidad» no tiene la columna «Email».");
+  return {asig, usab};
+}
+
+function guardarLocal(asig, usab){
+  try{
+    const payload={asig, usab, ts:new Date().toISOString()};
+    localStorage.setItem(CFG.storeKey, JSON.stringify(payload,(k,v)=>v));
+    marcarActualizado(payload.ts);
+  }catch(e){ console.warn("No se pudo guardar en localStorage:", e); }
+}
+function marcarActualizado(ts){
+  $("#updatedAt").textContent = ts? "Últ. carga: "+new Date(ts).toLocaleString("es-MX") : "";
+}
+function cargarLocal(){
+  try{
+    const raw=localStorage.getItem(CFG.storeKey);
+    if(!raw) return false;
+    const p=JSON.parse(raw);
+    const P=procesar(p.asig, p.usab);
+    renderAll(P);
+    marcarActualizado(p.ts);
+    return true;
+  }catch(e){ console.warn("localStorage inválido:", e); return false; }
+}
+
+function manejarArchivo(file){
+  $("#errBox").innerHTML="";
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const {asig, usab}=leerLibro(e.target.result);
+      const P=procesar(asig, usab);
+      renderAll(P);
+      guardarLocal(asig, usab);
+    }catch(err){
+      $("#errBox").innerHTML=`<div class="err"><b>No se pudo procesar el archivo:</b><br>${err.message}</div>`;
+      console.error(err);
+    }
+  };
+  reader.onerror=()=>{ $("#errBox").innerHTML=`<div class="err">Error al leer el archivo.</div>`; };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ---------- Exportación a Excel del resultado procesado ---------- */
+function exportar(){
+  if(!STATE) return;
+  const wb=XLSX.utils.book_new();
+  // Análisis detallado (bloques A/B/C)
+  const A=["Nombre","Correo electrónico","Centro de costos","CeCo Team","User Team","Licencia","Uso",
+    "Cantidad lic","Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops","Fecha",
+    "Seat Tier","Role","Last Active","Days Active","Chats","Messages","Projects Created","Projects Used",
+    "Pull Requests","Code sessions","File Edits","Cowork Sessions","Cowork Messages","Artifacts Created","Estimated Spend (USD)"];
+  const B=["Días calendario","Días hábiles","Días sin uso","Días desde últ. conexión"];
+  const C=["% de uso","Nivel de uso","Amplitud de adopción (0-5)","Acción sugerida","Consideraciones"];
+  const cols=[...A,...B,...C];
+  const det=STATE.rows.map(r=>{const o={}; for(const c of cols){
+    let v=r[c]; if((c==="Fecha"||c==="Last Active")&&v) v=fmtDate(v); o[c]=v??((B.includes(c)||["Days Active"].includes(c))?0:"");}
+    return o;});
+  // (La hoja "Análisis Detallado" se agrega al final, ver más abajo.)
+  // Volumetría
+  const vol=aggVolumetria(STATE.consol).map(v=>({"Fecha de asignación":fmtDate(v.fecha),
+    "Licencias en la fecha":v.lic,"Usuarios en la fecha":v.users,"Licencias acumuladas":v.licAcum,"Usuarios acumulados":v.usersAcum}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(vol), "Volumetría Licencias");
+  // Usabilidad de todos los usuarios (todos los niveles, para filtrar en Excel)
+  const usab=[...STATE.rows]
+    .sort((a,b)=> (NIVEL_ORDER.indexOf(a["Nivel de uso"])-NIVEL_ORDER.indexOf(b["Nivel de uso"]))
+      || String(a["User Team"]).localeCompare(String(b["User Team"])) || a["% de uso"]-b["% de uso"])
+    .map(r=>({"User Team":r["User Team"],Nombre:r["Nombre"],Correo:r["Correo electrónico"],
+      Nivel:r["Nivel de uso"],"% de uso":r["% de uso"],
+      "Última conexión":r["Last Active"]?fmtDate(r["Last Active"]):"Sin registro",
+      "Días desde últ. conexión":r["Días desde últ. conexión"],
+      "Días activos":r["Days Active"],"Días hábiles":r["Días hábiles"],
+      "Días sin uso":r["Días sin uso"],"Acción sugerida":r["Acción sugerida"]}));
+  const wsUsab=XLSX.utils.json_to_sheet(usab);
+  wsUsab["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:usab.length,c:10}})};
+  XLSX.utils.book_append_sheet(wb, wsUsab, "Usabilidad Usuarios");
+  // Resumen niveles
+  const niv=aggNiveles(STATE.rows).map(n=>({"Nivel de uso":n.nivel,Usuarios:n.count,"% de uso promedio":Math.round(n.prom*10)/10}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(niv), "Resumen Niveles");
+  // % de uso por team
+  const ut=aggUsoTeam(STATE.rows).map(t=>({"User Team":t.team,Usuarios:t.users,
+    "% de uso promedio":Math.round(t.prom*10)/10,"Días activos promedio":Math.round(t.daProm*10)/10}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ut), "% Uso por Team");
+  // Costo por nivel (ocioso vs productivo)
+  const cn=aggCostoNivel(STATE.rowsFull);
+  const cnRows=cn.niv.map(o=>({"Nivel de uso":o.nivel,"Clasificación":o.clasif,Usuarios:o.users,
+    "Costo anual (USD)":Math.round(o.usd*100)/100,"Facturado (MXN)":Math.round(o.mxn*100)/100,
+    "% del facturado":Math.round(o.pct*10)/10}));
+  cnRows.push({"Nivel de uso":"TOTAL","Clasificación":"",Usuarios:cn.totalUsers,
+    "Costo anual (USD)":Math.round(cn.totalUSD*100)/100,"Facturado (MXN)":Math.round(cn.totalMXN*100)/100,"% del facturado":100});
+  cnRows.push({});
+  cnRows.push({"Nivel de uso":"RESUMEN DE APROVECHAMIENTO"});
+  cn.aprov.forEach(c=>cnRows.push({"Nivel de uso":c.clasif,"Clasificación":"",Usuarios:c.users,
+    "Costo anual (USD)":Math.round(c.usd*100)/100,"Facturado (MXN)":Math.round(c.mxn*100)/100,
+    "% del facturado":Math.round(c.pct*10)/10}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cnRows), "Costo por Nivel");
+  // Consumo Presup. Ops (usuarios con Presupuesto Ops > 0, por fecha)
+  const po=aggPresupOps(STATE.consol);
+  const poRows=po.rows.map(r=>({"Fecha de asignación":fmtDate(r.fecha),Usuarios:r.users,
+    "Presupuesto Ops (MXN)":Math.round(r.po*100)/100,"Facturado (MXN)":Math.round(r.mxn*100)/100}));
+  poRows.push({"Fecha de asignación":"TOTAL",Usuarios:po.total.users,
+    "Presupuesto Ops (MXN)":Math.round(po.total.po*100)/100,"Facturado (MXN)":Math.round(po.total.mxn*100)/100});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(poRows), "Consumo Presup. Ops");
+  // Monto por team (al final) — desde registros crudos (contabilidad)
+  const teamsAgg=aggTeams(STATE.asigRaw);
+  const teamsTot=teamsAgg.reduce((a,t)=>({regs:a.regs+t.regs,lic:a.lic+t.lic,usd:a.usd+t.usd,fusd:a.fusd+t.fusd,mxn:a.mxn+t.mxn,po:a.po+t.po}),{regs:0,lic:0,usd:0,fusd:0,mxn:0,po:0});
+  const teams=teamsAgg.map(t=>({"User Team":t.team,Registros:t.regs,Licencias:t.lic,
+    "Costo anual (USD)":r2(t.usd),"Facturado (USD)":r2(t.fusd),"Facturado (MXN)":r2(t.mxn),"Presupuesto Ops":r2(t.po)}));
+  teams.push({"User Team":"TOTAL",Registros:teamsTot.regs,Licencias:teamsTot.lic,
+    "Costo anual (USD)":r2(teamsTot.usd),"Facturado (USD)":r2(teamsTot.fusd),"Facturado (MXN)":r2(teamsTot.mxn),"Presupuesto Ops":r2(teamsTot.po)});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(teams), "Monto por User Team");
+  // Análisis detallado (al final)
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det,{header:cols}), "Análisis Detallado");
+
+  XLSX.writeFile(wb, "Analisis_Usabilidad_Final.xlsx");
+}
+
+/* ---------- Wiring de eventos ---------- */
+
+
+$("#bajaSearch").addEventListener("input", drawUsab);
+["detSearch","detNivel","detTeam","detAccion"].forEach(id=>$("#"+id).addEventListener("input", drawDet));
+
+// Tema
+const themeBtn=$("#themeBtn");
+function applyTheme(t){ if(t) document.documentElement.setAttribute("data-theme",t); else document.documentElement.removeAttribute("data-theme");
+  try{localStorage.setItem("licenciasClaude:theme",t||"");}catch(e){}
+  if(STATE&&STATE.__redraw) STATE.__redraw(); }
+themeBtn.addEventListener("click",()=>{
+  const cur=document.documentElement.getAttribute("data-theme");
+  const dark=cur? cur==="dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(dark?"light":"dark");
+});
+try{ const st=localStorage.getItem("licenciasClaude:theme"); if(st) applyTheme(st); }catch(e){}
+
+// Redibujar en resize
+let rTO; window.addEventListener("resize",()=>{ clearTimeout(rTO); rTO=setTimeout(()=>{ if(STATE&&STATE.__redraw) STATE.__redraw(); },150); });
+
+// Cargar datos previos si existen
+
+
+
+/* ====== Bootstrap para incrustar (Google Sites): datos + render directo ====== */
+const ASIG_DATA=[{"Nombre": "Bruno Juanes", "Correo electrónico": "bjuanes@kio.tech", "ID licencia": 1.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "José Luis Noriega", "Correo electrónico": "jnoriega@kio.tech", "ID licencia": 2.0, "Movimiento": "Lic. Retirada", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 0.0, "Facturado (USD)": 0.0, "Facturado (MXN)": 0.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 0.0, "Fecha Asig": null, "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Bernardo González", "Correo electrónico": "jbgonzalez@kio.tech", "ID licencia": 3.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Hector Espejel", "Correo electrónico": "hespejel@kio.tech", "ID licencia": 4.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Maghandi Suarez", "Correo electrónico": "msuarezp@kio.tech", "ID licencia": 5.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Mercedes Morales", "Correo electrónico": "mmoralesl@kio.tech", "ID licencia": 6.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Romel De La Cruz", "Correo electrónico": "rdelacruz@kio.tech", "ID licencia": 7.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 1200.0, "Facturado (USD)": 1200.0, "Facturado (MXN)": 22800.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Javier Reyes", "Correo electrónico": "jreyes@kio.tech", "ID licencia": 8.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dirección", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 1200.0, "Facturado (USD)": 1200.0, "Facturado (MXN)": 22800.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Sinapsis Team", "Correo electrónico": "sinapsis@kio.tech", "ID licencia": 9.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Finanzas", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 1200.0, "Facturado (USD)": 1200.0, "Facturado (MXN)": 22800.0, "Presupuesto Ops": 0.0, "Uso": "Equipo", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "IT Apps Team", "Correo electrónico": "it_services@kio.tech", "ID licencia": 10.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "IT ", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 1200.0, "Facturado (USD)": 1200.0, "Facturado (MXN)": 22800.0, "Presupuesto Ops": 0.0, "Uso": "Equipo", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Marketing Team", "Correo electrónico": "marketing@kio.tech", "ID licencia": 11.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Marketing", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 1200.0, "Facturado (USD)": 1200.0, "Facturado (MXN)": 22800.0, "Presupuesto Ops": 0.0, "Uso": "Equipo", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": null}, {"Nombre": "Omar Guzman", "Correo electrónico": "oguzmant@kio.tech", "ID licencia": 12.0, "Movimiento": "Asignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Ops - Preventa", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-05-13", "Fecha": "2026-05-13", "Consideraciones": "* 1 upgrade a premium"}, {"Nombre": "DX-ChatGPT", "Correo electrónico": "dx_chatgpt@kio.tech", "ID licencia": 13.0, "Movimiento": "Lic. Retirada", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dir Ops", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 0.0, "Facturado (USD)": 0.0, "Facturado (MXN)": 0.0, "Presupuesto Ops": 0.0, "Uso": "Equipo", "Cantidad lic": 0.0, "Fecha Asig": null, "Fecha": "2026-05-13", "Consideraciones": "* 2 reasignaciones "}, {"Nombre": "José Ríos Alonso", "Correo electrónico": "jriosa@kio.tech", "ID licencia": 14.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Alexis Jesus Cordova De La Cruz", "Correo electrónico": "acordova@kio.tech", "ID licencia": 15.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Braulio Eloy Franco Garcia", "Correo electrónico": "bfranco@kio.tech", "ID licencia": 16.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Daniela Mondragon Corona", "Correo electrónico": "dmondragon@kio.tech", "ID licencia": 17.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Diana Maricela Garcia Luna", "Correo electrónico": "dgarcial@kio.tech", "ID licencia": 18.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Marcos Alberto Vasquez Neri", "Correo electrónico": "mvasquez@kio.tech", "ID licencia": 19.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Miguel Angel Garrido Castaneda", "Correo electrónico": "mgarrido@kio.tech", "ID licencia": 20.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Ramiro Vazquez Vera", "Correo electrónico": "rvazquez@kio.tech", "ID licencia": 21.0, "Movimiento": "Asignación", "Centro de costos": "K0010266", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Jovani Ponce", "Correo electrónico": "jponce@kio.tech", "ID licencia": 22.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Hector Huerta", "Correo electrónico": "hhuerta@kio.tech", "ID licencia": 23.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Roberto Bata", "Correo electrónico": "rbata@kio.tech", "ID licencia": 24.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Luis Christian Garcia", "Correo electrónico": "lgarciam@kio.tech", "ID licencia": 25.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Sandy Areli Monroy", "Correo electrónico": "smonroy@kio.tech", "ID licencia": 26.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Luis Montes", "Correo electrónico": "lmontes@kio.tech", "ID licencia": 27.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Jose Ivan Ramirez", "Correo electrónico": "jramirezl@kio.tech", "ID licencia": 28.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Jonathan Ramón", "Correo electrónico": "jramon@kio.tech", "ID licencia": 29.0, "Movimiento": "Asignación", "Centro de costos": "K0010267", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 225.39, "Facturado (MXN)": 4282.41, "Presupuesto Ops": 4282.41, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-03", "Fecha": "2026-06-03", "Consideraciones": null}, {"Nombre": "Victor Iván Soto Guerra", "Correo electrónico": "vsoto@kio.tech", "ID licencia": 30.0, "Movimiento": "Asignación", "Centro de costos": "K0010255 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 224.7, "Facturado (MXN)": 4269.3, "Presupuesto Ops": 4269.3, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-05", "Fecha": "2026-06-05", "Consideraciones": null}, {"Nombre": "Omar Guzman", "Correo electrónico": "oguzmant@kio.tech", "ID licencia": 12.0, "Movimiento": "Update", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dir Ops", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": -240.0, "Facturado (USD)": 885.93, "Facturado (MXN)": 16832.67, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 0.0, "Fecha Asig": null, "Fecha": "2026-06-10", "Consideraciones": "Upgrade a Premium"}, {"Nombre": "José Da Silva", "Correo electrónico": "jdasilva@kio.tech", "ID licencia": 13.0, "Movimiento": "Lic. Retirada", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Dir Ops", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 0.0, "Facturado (USD)": null, "Facturado (MXN)": 0.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 0.0, "Fecha Asig": null, "Fecha": "2026-06-23", "Consideraciones": "Se reasigno dx_chatgpt@kio.tech a Pepe Da Silva "}, {"Nombre": "Tesorería Team", "Correo electrónico": "tesoreria.ai@kio.tech", "ID licencia": 31.0, "Movimiento": "Asignación", "Centro de costos": "K0010049", "CeCo Team": "Finanzas", "User Team": "Finanzas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 222.29, "Facturado (MXN)": 4223.51, "Presupuesto Ops": 0.0, "Uso": "Equipo", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-09", "Fecha": "2026-06-09", "Consideraciones": null}, {"Nombre": "Procurement Team", "Correo electrónico": "compras_proyectos@kio.tech", "ID licencia": 32.0, "Movimiento": "Asignación", "Centro de costos": "K0010263", "CeCo Team": "Compras", "User Team": "Finanzas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 220.91, "Facturado (MXN)": 4197.29, "Presupuesto Ops": 0.0, "Uso": "Equipo", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-11", "Fecha": "2026-06-11", "Consideraciones": null}, {"Nombre": "Joaquin Calvo Leon", "Correo electrónico": "jcalvo@kio.tech", "ID licencia": 33.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.13000000000002, "Facturado (MXN)": 4049.4700000000003, "Presupuesto Ops": 4049.4700000000003, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Carlos Ivan Sanchez Marrufo", "Correo electrónico": "csanchezm@kio.tech", "ID licencia": 34.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.13000000000002, "Facturado (MXN)": 4049.4700000000003, "Presupuesto Ops": 4049.4700000000003, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Jose Luis Vazquez Cano", "Correo electrónico": "jlvazquez@kio.tech", "ID licencia": 35.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.13000000000002, "Facturado (MXN)": 4049.4700000000003, "Presupuesto Ops": 4049.4700000000003, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Erick Benitez Hernandez", "Correo electrónico": "ebenitez@kio.tech", "ID licencia": 36.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.13000000000002, "Facturado (MXN)": 4049.4700000000003, "Presupuesto Ops": 4049.4700000000003, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Abigail Munoz Rodriguez", "Correo electrónico": "amunoz@kio.tech", "ID licencia": 37.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.13000000000002, "Facturado (MXN)": 4049.4700000000003, "Presupuesto Ops": 4049.4700000000003, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Raul Jaimes Martin", "Correo electrónico": "rjaimes@kio.tech", "ID licencia": 38.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Gustavo Gonzalez Martinez", "Correo electrónico": "ggonzalez@kio.tech", "ID licencia": 39.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Christian Jesus Ocampo Arce", "Correo electrónico": "cocampo@kio.tech", "ID licencia": 40.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Raymundo Dominguez", "Correo electrónico": "rdominguez@kio.tech", "ID licencia": 41.0, "Movimiento": "Lic. Retirada", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 0.0, "Facturado (USD)": 0.0, "Facturado (MXN)": 0.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 0.0, "Fecha Asig": null, "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Jesus Hernandez", "Correo electrónico": "jahernandezm@kio.tech", "ID licencia": 42.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Alfonso Cueto", "Correo electrónico": "acueto@kio.tech", "ID licencia": 43.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Ricardo Santiago", "Correo electrónico": "rsantiago@kio.tech", "ID licencia": 44.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Edwin Medina", "Correo electrónico": "emedina@kio.tech", "ID licencia": 45.0, "Movimiento": "Asignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-06-23", "Fecha": "2026-06-23", "Consideraciones": null}, {"Nombre": "Carlos Arturo Vargas Luna", "Correo electrónico": "cvargasl@kio.tech", "ID licencia": 46.0, "Movimiento": "Asignación", "Centro de costos": "K0010279 ", "CeCo Team": "Ops - Cyber", "User Team": "Ops - Cyber", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 207.58666666666667, "Facturado (MXN)": 3944.146666666667, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-01", "Fecha": "2026-07-01", "Consideraciones": null}, {"Nombre": "Juan Carlos Ruperto Zarate", "Correo electrónico": "jruperto@kio.tech", "ID licencia": 47.0, "Movimiento": "Asignación", "Centro de costos": "K0010279 ", "CeCo Team": "Ops - Cyber", "User Team": "Ops - Cyber", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 207.58666666666667, "Facturado (MXN)": 3944.146666666667, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-01", "Fecha": "2026-07-01", "Consideraciones": null}, {"Nombre": "Sebastián González García", "Correo electrónico": "sgonzalezg@kio.tech", "ID licencia": 48.0, "Movimiento": "Asignación", "Centro de costos": "K0010279 ", "CeCo Team": "Ops - Cyber", "User Team": "Ops - Cyber", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 207.58666666666667, "Facturado (MXN)": 3944.146666666667, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-01", "Fecha": "2026-07-01", "Consideraciones": null}, {"Nombre": "Gustavo Dorantes Chavez", "Correo electrónico": "gdorantes@kio.tech", "ID licencia": 49.0, "Movimiento": "Asignación", "Centro de costos": "K0010263", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Edgar Fidel Salinas Espinoza", "Correo electrónico": "esalinas@kio.tech", "ID licencia": 50.0, "Movimiento": "Asignación", "Centro de costos": "K0010263", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Armando Beltran", "Correo electrónico": "abeltran@kio.tech", "ID licencia": 51.0, "Movimiento": "Asignación", "Centro de costos": "K0010263", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Jonathan Vallejo", "Correo electrónico": "jjvallejo@kio.tech", "ID licencia": 52.0, "Movimiento": "Asignación", "Centro de costos": "K0010263", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Aldo Romero", "Correo electrónico": "aromero@kio.tech", "ID licencia": 53.0, "Movimiento": "Asignación", "Centro de costos": "K0010263", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Jesus Morales Enciso", "Correo electrónico": "jmoralese@kio.tech", "ID licencia": 54.0, "Movimiento": "Asignación", "Centro de costos": "K0010060", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Rafael Hernández", "Correo electrónico": "rhernandezb@kio.tech", "ID licencia": 55.0, "Movimiento": "Asignación", "Centro de costos": "K0010060", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Gerardo Tellez", "Correo electrónico": "gtellez@kio.tech", "ID licencia": 56.0, "Movimiento": "Asignación", "Centro de costos": "K0010060", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Rafael Sánchez", "Correo electrónico": "rsanchezo@kio.tech", "ID licencia": 57.0, "Movimiento": "Asignación", "Centro de costos": "K0010060", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "Abraham Espinal", "Correo electrónico": "aespinal@kio.tech", "ID licencia": 58.0, "Movimiento": "Asignación", "Centro de costos": "K0010060", "CeCo Team": "Ops - Cuesto", "User Team": "Ops - Plataformas", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 201.74200000000002, "Facturado (MXN)": 3833.0980000000004, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-10", "Fecha": "2026-07-10", "Consideraciones": null}, {"Nombre": "KAI", "Correo electrónico": "kai@kio.tech", "ID licencia": 13.0, "Movimiento": "Reasignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "Ops. DX", "Licencia": "Team plan - Premium - Anual", "Costo anual (USD)": 1200.0, "Facturado (USD)": 1200.0, "Facturado (MXN)": 22800.0, "Presupuesto Ops": 22800.0, "Uso": "Equipo", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-14", "Fecha": "2026-07-14", "Consideraciones": "Se reasigno la cuenta de Pepe Da Silva a kai@kio.tech "}, {"Nombre": "Olga Badillo ", "Correo electrónico": "obadillo@kio.tech", "ID licencia": 59.0, "Movimiento": "Asignación", "Centro de costos": "K0010048", "CeCo Team": "Ops - DX", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 188.69, "Facturado (MXN)": 3585.11, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-07-30", "Fecha": "2026-07-30", "Consideraciones": null}, {"Nombre": "Rodrigo Galindo Mello ", "Correo electrónico": "rgalindo@kio.tech", "ID licencia": 60.0, "Movimiento": "Asignación", "Centro de costos": "K0010218", "CeCo Team": "Ops - Nube", "User Team": "Ops - Nube", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 183.92, "Facturado (MXN)": 3494.4799999999996, "Presupuesto Ops": 3494.4799999999996, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-06", "Fecha": "2026-08-06", "Consideraciones": null}, {"Nombre": "Emma Alguera  ", "Correo electrónico": "ealguera@kio.tech", "ID licencia": 61.0, "Movimiento": "Asignación", "Centro de costos": "K0010054", "CeCo Team": "RR. HH.", "User Team": "RR. HH.", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 183.5, "Facturado (MXN)": 3486.5, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-07", "Fecha": "2026-08-07", "Consideraciones": null}, {"Nombre": "Talia Maciel  ", "Correo electrónico": "tmaciel@kio.tech", "ID licencia": 62.0, "Movimiento": "Asignación", "Centro de costos": "K0010054", "CeCo Team": "RR. HH.", "User Team": "RR. HH.", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 183.5, "Facturado (MXN)": 3486.5, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-07", "Fecha": "2026-08-07", "Consideraciones": null}, {"Nombre": "Angelica Muñoz", "Correo electrónico": "amunozh@kio.tech", "ID licencia": 63.0, "Movimiento": "Asignación", "Centro de costos": "K0010054", "CeCo Team": "RR. HH.", "User Team": "RR. HH.", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 183.5, "Facturado (MXN)": 3486.5, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-07", "Fecha": "2026-08-07", "Consideraciones": null}, {"Nombre": "Ricardo Laiseca  ", "Correo electrónico": "rilaiseca@kio.tech", "ID licencia": 64.0, "Movimiento": "Asignación", "Centro de costos": "K0010054", "CeCo Team": "RR. HH.", "User Team": "RR. HH.", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 183.5, "Facturado (MXN)": 3486.5, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-07", "Fecha": "2026-08-07", "Consideraciones": null}, {"Nombre": "Marco Espinosa", "Correo electrónico": "mespinosa@kio.tech", "ID licencia": 65.0, "Movimiento": "Asignación", "Centro de costos": "K0010054", "CeCo Team": "RR. HH.", "User Team": "RR. HH.", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 183.5, "Facturado (MXN)": 3486.5, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-07", "Fecha": "2026-08-07", "Consideraciones": null}, {"Nombre": "Ossiel Cruz Velazquez", "Correo electrónico": "ocruzv@kio.tech", "ID licencia": 66.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Luis Angel Zuniga Madrid", "Correo electrónico": "lzuniga@kio.tech", "ID licencia": 67.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Lizbeth Aguilar Morales", "Correo electrónico": "laguilar@kio.tech", "ID licencia": 68.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Juan Carlos Morales Leon", "Correo electrónico": "jcmorales@kio.tech", "ID licencia": 69.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Erwin Ordonez Velazquez", "Correo electrónico": "eordonez@kio.tech", "ID licencia": 70.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Aniver Chino Marcelino", "Correo electrónico": "achino@kio.tech", "ID licencia": 71.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Andres Salazar Gomez", "Correo electrónico": "asalazarg@kio.tech", "ID licencia": 72.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Anel de la Cruz", "Correo electrónico": "adelacruz@kio.tech", "ID licencia": 73.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Javier Loeza", "Correo electrónico": "jloeza@kio.tech", "ID licencia": 74.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Erik Alfonso González", "Correo electrónico": "eagonzalez@kio.tech", "ID licencia": 75.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Pablo Alejandro Manuel", "Correo electrónico": "pmanuel@kio.tech", "ID licencia": 76.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Luis Enrique Jiménez", "Correo electrónico": "ljimenezt@kio.tech", "ID licencia": 77.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Emmanuel Márquez", "Correo electrónico": "emarquez@kio.tech", "ID licencia": 78.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Abisain Daniel Morales", "Correo electrónico": "amoralesm@kio.tech", "ID licencia": 79.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Nathalie Reyes", "Correo electrónico": "nreyesz@kio.tech", "ID licencia": 80.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Alfonso Zamudio", "Correo electrónico": "azamudio@kio.tech", "ID licencia": 81.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Amin Abi-Rached", "Correo electrónico": "amabirached@kio.tech", "ID licencia": 82.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Adán Lopez", "Correo electrónico": "alopezq@kio.tech", "ID licencia": 83.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Francisco Valencia", "Correo electrónico": "fvalencia@kio.tech", "ID licencia": 84.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Ops - DX", "User Team": "Ops - DX", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "José Da Silva", "Correo electrónico": "jdasilva@kio.tech", "ID licencia": 85.0, "Movimiento": "Asignación", "Centro de costos": "K0010266 ", "CeCo Team": "Dir Ops", "User Team": "Dir Ops", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 180.5715, "Facturado (MXN)": 3430.8585, "Presupuesto Ops": 3430.8585, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-11", "Fecha": "2026-08-11", "Consideraciones": null}, {"Nombre": "Larisa Carmona", "Correo electrónico": "alanderos@kio.tech", "ID licencia": 2.0, "Movimiento": "Reasignación", "Centro de costos": "K0010047", "CeCo Team": "IT ", "User Team": "IT ", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 240.0, "Facturado (MXN)": 4560.0, "Presupuesto Ops": 0.0, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-14", "Fecha": "2026-08-14", "Consideraciones": "Se reasigno la cuenta de José Luis Noriega "}, {"Nombre": "Application Management", "Correo electrónico": "appsmanagement@kio.tech", "ID licencia": 41.0, "Movimiento": "Reasignación", "Centro de costos": "K0010255", "CeCo Team": "Ops - DX", "User Team": "Ops- AppMgmt", "Licencia": "Team plan - Standard - Anual", "Costo anual (USD)": 240.0, "Facturado (USD)": 213.03875, "Facturado (MXN)": 4047.73625, "Presupuesto Ops": 4047.73625, "Uso": "Nombrada", "Cantidad lic": 1.0, "Fecha Asig": "2026-08-17", "Fecha": "2026-08-17", "Consideraciones": "Se reasigno la cuenta de Raymundo Dominguez"}, {"Nombre": null, "Correo electrónico": null, "ID licencia": null, "Movimiento": null, "Centro de costos": null, "CeCo Team": null, "User Team": null, "Licencia": null, "Costo anual (USD)": null, "Facturado (USD)": null, "Facturado (MXN)": 0.0, "Presupuesto Ops": null, "Uso": null, "Cantidad lic": null, "Fecha Asig": null, "Fecha": null, "Consideraciones": null}];
+const USAB_DATA=[{"Name": "IT Services", "Email": "it_services@kio.tech", "Role": "Primary Owner", "Seat Tier": "Premium", "Last Active": "2026-08-15", "Days Active": 69, "Chats": 159, "Messages": 1224, "Projects Created": 3, "Projects Used": 4, "Pull Requests": 0, "Code sessions": 122, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Finance Team", "Email": "sinapsis@kio.tech", "Role": "User", "Seat Tier": "Premium", "Last Active": "2026-08-14", "Days Active": 55, "Chats": 123, "Messages": 647, "Projects Created": 2, "Projects Used": 2, "Pull Requests": 0, "Code sessions": 129, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Rommel", "Email": "rdelacruz@kio.tech", "Role": "User", "Seat Tier": "Premium", "Last Active": "2026-08-16", "Days Active": 64, "Chats": 109, "Messages": 1495, "Projects Created": 0, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 0, "File Edits": 31, "Cowork Sessions": 58, "Cowork Messages": 105, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Juan Carlos", "Email": "jruperto@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 42, "Chats": 99, "Messages": 1088, "Projects Created": 13, "Projects Used": 10, "Pull Requests": 0, "Code sessions": 87, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 2, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Roberto Esteban Bata", "Email": "rbata@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 56, "Chats": 73, "Messages": 252, "Projects Created": 4, "Projects Used": 4, "Pull Requests": 0, "Code sessions": 287, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "bfranco", "Email": "bfranco@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 42, "Chats": 69, "Messages": 201, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 194, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Carlos Sanchez", "Email": "csanchezm@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 45, "Chats": 56, "Messages": 414, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 470, "File Edits": 221, "Cowork Sessions": 44, "Cowork Messages": 452, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Omar", "Email": "oguzmant@kio.tech", "Role": "User", "Seat Tier": "Premium", "Last Active": "2026-08-14", "Days Active": 45, "Chats": 50, "Messages": 584, "Projects Created": 5, "Projects Used": 4, "Pull Requests": 0, "Code sessions": 0, "File Edits": 13, "Cowork Sessions": 3, "Cowork Messages": 15, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Marketing", "Email": "marketing@kio.tech", "Role": "User", "Seat Tier": "Premium", "Last Active": "2026-08-16", "Days Active": 28, "Chats": 50, "Messages": 166, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Daniela", "Email": "dmondragon@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 27, "Chats": 47, "Messages": 240, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 30, "File Edits": 0, "Cowork Sessions": 2, "Cowork Messages": 8, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Bernardo Gonzalez", "Email": "jbgonzalez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 37, "Chats": 40, "Messages": 99, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 0, "File Edits": 55, "Cowork Sessions": 12, "Cowork Messages": 41, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Iván Soto", "Email": "vsoto@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-11", "Days Active": 27, "Chats": 40, "Messages": 186, "Projects Created": 3, "Projects Used": 3, "Pull Requests": 0, "Code sessions": 23, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Abigail Muñoz", "Email": "amunoz@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 39, "Chats": 39, "Messages": 113, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 393, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 2, "Artifacts Created": 1, "Estimated Spend (USD)": 0}, {"Name": "LCGM", "Email": "lgarciam@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 59, "Chats": 38, "Messages": 218, "Projects Created": 1, "Projects Used": 0, "Pull Requests": 2, "Code sessions": 213, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Tesoreria ITS", "Email": "tesoreria.ai@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 42, "Chats": 33, "Messages": 156, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "MAGHANDI SUAREZ", "Email": "msuarezp@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 23, "Chats": 31, "Messages": 103, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 2, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "HÉCTOR ESPEJEL LEÓN", "Email": "hespejel@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 19, "Chats": 27, "Messages": 133, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Jovani", "Email": "jponce@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 59, "Chats": 26, "Messages": 71, "Projects Created": 1, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 264, "File Edits": 60, "Cowork Sessions": 9, "Cowork Messages": 45, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Diana", "Email": "dgarcial@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 39, "Chats": 25, "Messages": 226, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 118, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Christian Ocampo", "Email": "cocampo@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 17, "Chats": 23, "Messages": 43, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 1, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 3, "Estimated Spend (USD)": 0}, {"Name": "Jesus", "Email": "jahernandezm@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 36, "Chats": 22, "Messages": 174, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 0, "File Edits": 175, "Cowork Sessions": 39, "Cowork Messages": 311, "Artifacts Created": 2, "Estimated Spend (USD)": 0}, {"Name": "Bruno Juanes", "Email": "bjuanes@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 20, "Chats": 22, "Messages": 41, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 2, "Cowork Sessions": 1, "Cowork Messages": 2, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Compras", "Email": "compras_proyectos@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 23, "Chats": 21, "Messages": 44, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 7, "Cowork Sessions": 2, "Cowork Messages": 23, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Sebastían", "Email": "sgonzalezg@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 23, "Chats": 20, "Messages": 126, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 113, "File Edits": 0, "Cowork Sessions": 2, "Cowork Messages": 7, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Marcos", "Email": "mvasquez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 43, "Chats": 18, "Messages": 41, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 364, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Luis", "Email": "lmontes@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 22, "Chats": 15, "Messages": 40, "Projects Created": 2, "Projects Used": 2, "Pull Requests": 0, "Code sessions": 47, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Mercedes", "Email": "mmoralesl@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-11", "Days Active": 16, "Chats": 14, "Messages": 56, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Miguel Garrido", "Email": "mgarrido@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 32, "Chats": 13, "Messages": 56, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 93, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Carlos Vargas", "Email": "cvargasl@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 32, "Chats": 12, "Messages": 118, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 11, "Code sessions": 261, "File Edits": 1, "Cowork Sessions": 2, "Cowork Messages": 8, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Jonathan", "Email": "jramon@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-07", "Days Active": 33, "Chats": 12, "Messages": 55, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 101, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Erick", "Email": "ebenitez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 45, "Chats": 12, "Messages": 53, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 8, "Code sessions": 550, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 2, "Estimated Spend (USD)": 0}, {"Name": "Joakin", "Email": "jcalvo@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-12", "Days Active": 24, "Chats": 11, "Messages": 26, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 670, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Sandy", "Email": "smonroy@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-11", "Days Active": 9, "Chats": 11, "Messages": 17, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Raúl", "Email": "rjaimes@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-03", "Days Active": 11, "Chats": 11, "Messages": 24, "Projects Created": 0, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 8, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Ricardo Santiago", "Email": "rsantiago@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-07-16", "Days Active": 8, "Chats": 8, "Messages": 27, "Projects Created": 1, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "JESUS MORALES", "Email": "jmoralese@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 13, "Chats": 8, "Messages": 32, "Projects Created": 3, "Projects Used": 4, "Pull Requests": 0, "Code sessions": 13, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Ramiro", "Email": "rvazquez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 26, "Chats": 8, "Messages": 25, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 46, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Luis Angel Zuñiga Madrid", "Email": "lzuniga@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 5, "Chats": 7, "Messages": 13, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 9, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Abraham", "Email": "aespinal@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-04", "Days Active": 5, "Chats": 5, "Messages": 22, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Gus GONZAL", "Email": "ggonzalez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-07-28", "Days Active": 4, "Chats": 4, "Messages": 16, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Adán", "Email": "alopezq@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 4, "Chats": 3, "Messages": 3, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 1, "Cowork Sessions": 2, "Cowork Messages": 5, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Alf Cueto", "Email": "acueto@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-07-27", "Days Active": 21, "Chats": 3, "Messages": 9, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 7, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Liz", "Email": "laguilar@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 2, "Chats": 3, "Messages": 7, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "jose luis", "Email": "jlvazquez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 35, "Chats": 3, "Messages": 3, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 251, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Gustavo", "Email": "gdorantes@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 20, "Chats": 3, "Messages": 19, "Projects Created": 0, "Projects Used": 1, "Pull Requests": 0, "Code sessions": 147, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Gerardo Tellez", "Email": "gtellez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-06", "Days Active": 3, "Chats": 3, "Messages": 13, "Projects Created": 1, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 2, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Emma", "Email": "ealguera@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 6, "Chats": 3, "Messages": 15, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 16, "Cowork Sessions": 4, "Cowork Messages": 12, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "KAI_Ñero", "Email": "kai@kio.tech", "Role": "User", "Seat Tier": "Premium", "Last Active": "2026-08-16", "Days Active": 34, "Chats": 2, "Messages": 6, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 5, "Code sessions": 2239, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Larisa Carmona", "Email": "alanderos@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-16", "Days Active": 3, "Chats": 2, "Messages": 5, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 14, "Cowork Sessions": 5, "Cowork Messages": 78, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Rafael Hernández", "Email": "rhernandezb@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-11", "Days Active": 5, "Chats": 2, "Messages": 3, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 13, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Jose Da Silva", "Email": "jdasilva@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 2, "Chats": 1, "Messages": 3, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Javier Loeza", "Email": "jloeza@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 2, "Chats": 1, "Messages": 1, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 9, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 3, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "JUAN ALONSO", "Email": "jriosa@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-07-20", "Days Active": 23, "Chats": 1, "Messages": 1, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 84, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Edwin Medina", "Email": "emedina@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 1, "Chats": 1, "Messages": 2, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Edgar Salinas", "Email": "esalinas@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 15, "Chats": 1, "Messages": 1, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 119, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 2, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Nathalie", "Email": "nreyesz@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 1, "Chats": 1, "Messages": 1, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Ricardo Laiseca", "Email": "rilaiseca@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 3, "Chats": 1, "Messages": 6, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 1, "Cowork Sessions": 1, "Cowork Messages": 2, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Ro", "Email": "rgalindo@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-10", "Days Active": 1, "Chats": 1, "Messages": 3, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Jose Ivan", "Email": "jramirezl@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-11", "Days Active": 26, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 70, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Jonathan", "Email": "jjvallejo@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-11", "Days Active": 9, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 5, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Andres", "Email": "asalazarg@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Talia", "Email": "tmaciel@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 3, "Chats": 0, "Messages": 0, "Projects Created": 4, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 58, "Cowork Sessions": 9, "Cowork Messages": 46, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "AppsManagement", "Email": "appsmanagement@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Armando Beltran", "Email": "abeltran@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 1, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 3, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Rafael", "Email": "rsanchezo@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-07", "Days Active": 3, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 13, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Erik", "Email": "eagonzalez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Alfonso", "Email": "azamudio@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Aldo Romero", "Email": "aromero@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-12", "Days Active": 3, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 5, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Javier", "Email": "jreyes@kio.tech", "Role": "User", "Seat Tier": "Premium", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Francisco Valencia", "Email": "fvalencia@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "jcmorales", "Email": "jcmorales@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-12", "Days Active": 1, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Lyan Badillo", "Email": "obadillo@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Mark", "Email": "mespinosa@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-13", "Days Active": 4, "Chats": 0, "Messages": 0, "Projects Created": 5, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 58, "Cowork Sessions": 7, "Cowork Messages": 19, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Daniel", "Email": "amoralesm@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Erwin", "Email": "eordonez@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-12", "Days Active": 1, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 1, "Cowork Messages": 1, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Aniver", "Email": "achino@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 2, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 16, "Cowork Sessions": 2, "Cowork Messages": 10, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Héctor", "Email": "hhuerta@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-14", "Days Active": 25, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 79, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Alejandro Manuel", "Email": "pmanuel@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "Alexis", "Email": "acordova@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": "2026-08-15", "Days Active": 48, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 299, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}, {"Name": "OssMX", "Email": "ocruzv@kio.tech", "Role": "User", "Seat Tier": "Standard", "Last Active": null, "Days Active": 0, "Chats": 0, "Messages": 0, "Projects Created": 0, "Projects Used": 0, "Pull Requests": 0, "Code sessions": 0, "File Edits": 0, "Cowork Sessions": 0, "Cowork Messages": 0, "Artifacts Created": 0, "Estimated Spend (USD)": 0}];
+
+function revive(rows){ return rows.map(r=>{ const o={...r};
+  for(const k of ["Fecha","Fecha Asig","Last Active"]) if(o[k]!=null) o[k]=String(o[k]);
+  return o; }); }
+function exportarCSV(){
+  if(!window.STATE) return;
+  const cols=["Nombre","Correo electrónico","User Team","Licencia","ID licencia","Movimiento",
+    "Fecha","Días calendario","Días hábiles","Días sin uso","Días desde últ. conexión",
+    "Days Active","% de uso","Nivel de uso","Amplitud de adopción (0-5)","Acción sugerida",
+    "Costo anual (USD)","Facturado (MXN)","Presupuesto Ops","Cantidad lic"];
+  const esc=v=>{ if(v==null) return ""; if(v instanceof Date) v=v.toISOString().slice(0,10);
+    v=String(v); return /[",\n;]/.test(v)? '"'+v.replace(/"/g,'""')+'"' : v; };
+  const lines=[cols.join(",")];
+  for(const r of window.STATE.rowsFull) lines.push(cols.map(c=>esc(r[c])).join(","));
+  const blob=new Blob(["﻿"+lines.join("\r\n")],{type:"text/csv;charset=utf-8;"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="Analisis_Usabilidad.csv"; document.body.appendChild(a); a.click(); a.remove();
+}
+(function(){
+  const old=document.getElementById("exportBtn");
+  if(old){ const b=old.cloneNode(true); b.disabled=false; b.textContent="⬇ Exportar CSV";
+    old.replaceWith(b); b.addEventListener("click", exportarCSV); }
+  try{ renderAll(procesar(revive(ASIG_DATA), revive(USAB_DATA))); }
+  catch(e){ document.getElementById("errBox").innerHTML=
+    '<div class="err">Error al renderizar: '+e.message+'</div>'; console.error(e); }
+})();
+
+</script>
+</body>
+</html>
