@@ -53,6 +53,19 @@ CAMPOS_ULTIMO = ["Centro de costos", "CeCo Team", "User Team",
 COLS_SUMA = ["Costo anual (USD)", "Facturado (USD)",
              "Facturado (MXN)", "Presupuesto Ops"]
 
+# Campos de comportamiento de la licencia (ID + Movimiento).
+ID_LIC_CANDS = ["ID licencia", "ID Licencia", "ID licencía", "Id licencia", "IDLicencia"]
+MOV_COL = "Movimiento"
+MOV_RETIRADA = "Lic. Retirada"
+MOV_PRIO = {"Reasignación": 3, "Update": 2, "Asignación": 1}
+
+
+def resolver_id_licencia(df: pd.DataFrame):
+    for c in ID_LIC_CANDS:
+        if c in df.columns:
+            return c
+    return None
+
 # Métricas de usabilidad numéricas (para rellenar con 0 en el left join).
 METRICAS_NUM = [
     "Days Active", "Chats", "Messages", "Projects Created", "Projects Used",
@@ -136,51 +149,69 @@ def consolidar_asignacion(asig: pd.DataFrame) -> pd.DataFrame:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
 
+    # --- Consolidación por ID licencia + Movimiento ---
+    # Reglas de "Movimiento":
+    #   * Asignación   -> primer registro de la licencia.
+    #   * Lic. Retirada-> titular anterior (reasignado): NO se considera.
+    #   * Update       -> incremento de nivel: se agrupa con la Asignación,
+    #                     suma montos y conserva la fecha de la Asignación.
+    #   * Reasignación -> titular activo actual: se trata como Asignación.
+    id_col = resolver_id_licencia(df)
+    if id_col is None or MOV_COL not in df.columns:
+        raise ValueError("La hoja «Asignación» debe incluir las columnas "
+                         "«ID licencia» y «Movimiento».")
+    df[MOV_COL] = df[MOV_COL].astype("string").str.strip()
+    # Quita filas vacías y registros de licencia retirada.
+    df = df[df[id_col].notna()]
+    n_retiradas = int((df[MOV_COL] == MOV_RETIRADA).sum())
+    df = df[df[MOV_COL] != MOV_RETIRADA].copy()
+    df["_prio"] = df[MOV_COL].map(MOV_PRIO).fillna(0)
+
     filas = []
     n_consolidados = 0
-    for email, g in df.groupby("email_key", sort=False):
-        if len(g) == 1:
-            fila = g.iloc[0].to_dict()
-            filas.append(fila)
-            continue
-
-        # --- Consolidación de un correo con múltiples registros ---
-        # Regla:
-        #   * Campos vigentes (Centro de costos, CeCo Team, User Team,
-        #     Licencia, Uso, Fecha) -> del ÚLTIMO registro.
-        #   * Montos (Costo anual USD, Facturado USD, Facturado MXN,
-        #     Presupuesto Ops) -> SUMA de todos los registros del usuario.
-        #   * Cantidad lic -> SUMA (para reflejar la licencia vigente).
-        n_consolidados += 1
-        base = g.iloc[-1].to_dict()  # último registro = estado vigente
-
+    n_reasig = 0
+    for lid, g in df.groupby(id_col, sort=False):
+        g = g.sort_values("_prio")
+        base = g.iloc[-1].to_dict()          # titular vigente (prioridad más alta)
+        movs = g[MOV_COL].fillna("").tolist()
+        # Montos -> SUMA de todos los registros de la licencia.
         for c in COLS_SUMA:
             if c in df.columns:
                 base[c] = g[c].sum()
         base["Cantidad lic"] = g["Cantidad lic"].sum()
+        # Fecha de asignación: de la Asignación (o Reasignación si no hay).
+        asg = g[g[MOV_COL] == "Asignación"]["Fecha"].dropna()
+        rea = g[g[MOV_COL] == "Reasignación"]["Fecha"].dropna()
+        if len(asg):
+            base["Fecha"] = asg.min()
+        elif len(rea):
+            base["Fecha"] = rea.min()
+        else:
+            base["Fecha"] = g["Fecha"].dropna().min()
 
-        # Nota de consolidación en Consideraciones.
-        lics = " -> ".join(g["Licencia"].astype(str).tolist())
-        nota = (f"Consolidado de {len(g)} registros. Campos vigentes del último "
-                f"registro (Licencia: {base['Licencia']}; "
-                f"Fecha: {pd.Timestamp(base['Fecha']):%Y-%m-%d}). "
-                f"Montos sumados. Historial de licencias: {lics}.")
-        prev = base.get("Consideraciones")
-        base["Consideraciones"] = (
-            f"{prev} | {nota}" if isinstance(prev, str) and prev.strip() else nota
-        )
+        if len(g) > 1:
+            n_consolidados += 1
+        if "Reasignación" in movs:
+            n_reasig += 1
+        if len(g) > 1 or any(m and m != "Asignación" for m in movs):
+            nota = (f"Licencia {lid} [{' + '.join(str(m) for m in movs)}]. "
+                    f"Titular activo: {base['Nombre']}. Montos sumados; fecha de "
+                    f"asignación de la Asignación original.")
+            prev = base.get("Consideraciones")
+            base["Consideraciones"] = (
+                f"{prev} | {nota}" if isinstance(prev, str) and prev.strip() else nota
+            )
         filas.append(base)
 
-    consol = pd.DataFrame(filas).reset_index(drop=True)
-    print(f"    - Correos consolidados (upgrades): {n_consolidados}")
-    print(f"    - Asignación consolidada (todos): {consol.shape[0]} filas "
-          f"(antes {asig.shape[0]})")
-    # Se devuelve el consolidado COMPLETO. El filtro de 'licencias vigentes'
-    # (Cantidad lic > 0) se aplica en main() sólo para las vistas de
-    # usabilidad; los indicadores de costo usan el total del proyecto.
+    consol = pd.DataFrame(filas).drop(columns=["_prio"], errors="ignore").reset_index(drop=True)
+    print(f"    - Registros «Lic. Retirada» excluidos: {n_retiradas}")
+    print(f"    - Reasignaciones (titular activo): {n_reasig}")
+    print(f"    - Licencias con Update/Reasignación consolidadas: {n_consolidados}")
+    print(f"    - Licencias activas: {consol.shape[0]} (de {asig.shape[0]} registros)")
     n_sin_lic = int((pd.to_numeric(consol["Cantidad lic"], errors="coerce")
                      .fillna(0) <= 0).sum())
-    print(f"    - Usuarios sin licencia vigente (Cantidad lic = 0): {n_sin_lic}")
+    if n_sin_lic:
+        print(f"    - Licencias sin cantidad vigente (Cantidad lic = 0): {n_sin_lic}")
     return consol
 
 
@@ -199,6 +230,20 @@ def cruzar(consol: pd.DataFrame, usab: pd.DataFrame):
 
     # Evita colisión de nombres: la usabilidad trae su propio "Name".
     df = consol.merge(u, on="email_key", how="left", suffixes=("", "_usab"))
+
+    # Descarta el registro de usabilidad si la última conexión es ANTERIOR a la
+    # fecha de asignación (incongruente: actividad de un titular previo, no del
+    # usuario activo tras una reasignación).
+    incong = (df["Last Active"].notna() & df["Fecha"].notna()
+              & (df["Last Active"] < df["Fecha"]))
+    n_descartados = int(incong.sum())
+    if n_descartados:
+        cols_usab = [c for c in u.columns if c != "email_key"]
+        for c in cols_usab:
+            if c in df.columns:
+                df.loc[incong, c] = np.nan
+        print(f"    - Usabilidad descartada (última conexión < fecha de "
+              f"asignación): {n_descartados}")
 
     con_uso = df["Days Active"].notna().sum()
     print(f"    - Usuarios de asignación con datos de uso: {con_uso}/{len(df)}")
@@ -467,6 +512,10 @@ def monto_por_team(asig: pd.DataFrame) -> pd.DataFrame:
     """
     df = asig.copy()
     df.columns = [str(c).strip() for c in df.columns]
+    # Excluye «Lic. Retirada» y filas vacías (no se consideran en el análisis).
+    if MOV_COL in df.columns:
+        df = df[df[MOV_COL].astype("string").str.strip() != MOV_RETIRADA]
+    df = df[df["User Team"].notna() & (df["User Team"].astype("string").str.strip() != "")]
     for c in ["Costo anual (USD)", "Facturado (USD)", "Facturado (MXN)",
               "Presupuesto Ops", "Cantidad lic"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
@@ -600,29 +649,23 @@ def verificar(final: pd.DataFrame, consol: pd.DataFrame,
     assert (final.loc[rec, "Días calendario"] < DIAS_MIN_EVALUACION).all(), \
         "Un usuario 'Reciente' tiene 15+ días de licencia!"
 
-    # Cuadre de costos: los campos que se SUMAN no deben alterar el total.
-    # La consolidación suma por usuario y luego se excluyen los usuarios cuya
-    # Cantidad lic total = 0, por lo que se compara contra el total original
-    # de los usuarios que SÍ sobreviven al filtro.
+    # Cuadre de costos: la consolidación agrupa por ID licencia y suma; los
+    # registros «Lic. Retirada» (monto 0) se excluyen. El total consolidado
+    # debe igualar el total de los registros considerados (todos menos las
+    # retiradas y las filas vacías).
     orig = pd.read_excel(ARCHIVO_ENTRADA_DEFAULT, sheet_name=HOJA_ASIGNACION)
     orig.columns = [str(c).strip() for c in orig.columns]
-    orig["_k"] = normaliza_correo(orig["Correo electrónico"])
-    orig["Cantidad lic"] = pd.to_numeric(orig["Cantidad lic"], errors="coerce").fillna(0)
-    cant_por_correo = orig.groupby("_k")["Cantidad lic"].sum()
-    vivos = set(cant_por_correo[cant_por_correo > 0].index)
-    orig_vivos = orig[orig["_k"].isin(vivos)]
-    excluidos = orig["_k"].nunique() - len(vivos)
-    print(f"      (usuarios excluidos por Cantidad lic = 0: {excluidos})")
+    id_col = resolver_id_licencia(orig)
+    considerados = orig[orig[id_col].notna()] if id_col else orig
+    if MOV_COL in considerados.columns:
+        considerados = considerados[
+            considerados[MOV_COL].astype("string").str.strip() != MOV_RETIRADA]
     for c in COLS_SUMA + ["Cantidad lic"]:
-        o = pd.to_numeric(orig_vivos[c], errors="coerce").fillna(0).sum()
+        o = pd.to_numeric(considerados[c], errors="coerce").fillna(0).sum()
         n = pd.to_numeric(final[c], errors="coerce").fillna(0).sum()
         estado = "OK" if abs(o - n) < 0.01 else "DIFERENCIA"
-        print(f"      - {c} (suma, usuarios vigentes): "
-              f"original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
+        print(f"      - {c} (suma): original={o:,.2f} | consolidado={n:,.2f} -> {estado}")
         assert abs(o - n) < 0.01, f"El total de {c} cambió tras consolidar!"
-    # Total bruto (todos los registros) para referencia contable.
-    tot_mxn = pd.to_numeric(orig["Facturado (MXN)"], errors="coerce").fillna(0).sum()
-    print(f"      Facturado (MXN) bruto (todos los registros): {tot_mxn:,.2f}")
 
     print(f"\n    Distribución por Nivel de uso:")
     print(final["Nivel de uso"].value_counts().sort_index().to_string())

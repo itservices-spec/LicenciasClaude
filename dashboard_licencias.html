@@ -238,7 +238,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     <div class="logo">✦</div>
     <div>
       <h1>Dashboard de Usabilidad · Licencias Claude</h1>
-      <div class="sub">Datos desde Google Drive · Asignación × Usabilidad</div>
+      <div class="sub">Integración Asignación × Usabilidad — carga y actualización recurrente</div>
     </div>
   </div>
   <div class="cut" id="cutBox" hidden>
@@ -247,9 +247,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   </div>
   <button class="btn" id="themeBtn" title="Cambiar tema">◐ Tema</button>
   <button class="btn" id="exportBtn" disabled>⬇ Exportar Excel</button>
-  <label class="btn ghost" for="fileInput" title="Cargar un archivo .xlsx (alternativa)">⬆ Archivo</label>
+  <label class="btn primary" for="fileInput">⬆ Cargar / actualizar datos</label>
   <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
-  <button class="btn primary" id="updateBtn" title="Leer los datos desde Google Drive">⟳ Actualizar datos</button>
 </header>
 
 <div class="wrap">
@@ -257,13 +256,11 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   <!-- Empty state / dropzone -->
   <div id="dropzone" class="drop">
     <div class="icon">📊</div>
-    <h2>Actualiza los datos de licencias</h2>
-    <p>Pulsa <b>«Actualizar datos»</b> para leer la información directamente desde el
-       archivo en <b>Google Drive</b>.</p>
-    <p style="margin:16px 0"><button class="btn primary" id="updateBtnBig">⟳ Actualizar datos desde Google Drive</button></p>
-    <p class="hint">El procesamiento ocurre 100% en tu navegador. También puedes arrastrar aquí un
-       archivo <b>.xlsx</b> (pestañas «Asignación» y «Usabilidad») como alternativa. Los datos se
-       guardan localmente para recargarse al volver.</p>
+    <h2>Carga el archivo de licencias</h2>
+    <p>Arrastra aquí el archivo <b>.xlsx</b> con las pestañas <b>«Asignación»</b> y <b>«Usabilidad»</b>,
+       o usa el botón <b>«Cargar / actualizar datos»</b>.</p>
+    <p class="hint">El procesamiento ocurre 100% en tu navegador. Los datos se guardan localmente para
+       recargarse al volver, y puedes volver a subir un archivo actualizado cuando quieras.</p>
   </div>
 
   <div id="errBox"></div>
@@ -378,12 +375,15 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 const CFG = {
   hojaAsig: "Asignación",
   hojaUsab: "Usabilidad",
-  // Origen de datos en Google Drive (Google Sheets).
-  gsheetId: "1cOWmPdBQfBccLLiJDuimDtJJiG031529-kYRLjBbDX8",
   rankLic: {premium:3, pro:2, standard:1},
   colsCostos: ["Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops","Cantidad lic"],
-  // Montos que se SUMAN al consolidar varios registros de un usuario.
+  // Montos que se SUMAN al consolidar varios registros de una licencia.
   colsSuma: ["Costo anual (USD)","Facturado (USD)","Facturado (MXN)","Presupuesto Ops"],
+  // Campos de comportamiento de la licencia (ID + Movimiento).
+  idCands: ["ID licencia","ID Licencia","ID licencía","Id licencia","IDLicencia"],
+  movCol: "Movimiento",
+  movRetirada: "Lic. Retirada",
+  movPrio: {"Reasignación":3, "Update":2, "Asignación":1},
   metricasNum: ["Days Active","Chats","Messages","Projects Created","Projects Used",
     "Pull Requests","Code sessions","File Edits","Cowork Sessions","Cowork Messages",
     "Artifacts Created","Estimated Spend (USD)"],
@@ -464,40 +464,55 @@ function procesar(asigRows, usabRows){
   const usaFechaAsig = fechaCol!=="Fecha";
   if(usaFechaAsig) asigRows.forEach(r=> r["Fecha"]=r[fechaCol]);
 
-  /* --- Consolidación de asignaciones duplicadas (upgrades) --- */
+  /* --- Consolidación por ID licencia + Movimiento --- */
+  // Reglas de "Movimiento":
+  //   * Asignación   -> primer registro de la licencia.
+  //   * Lic. Retirada-> titular anterior (reasignado): NO se considera.
+  //   * Update       -> incremento de nivel: se agrupa con la Asignación,
+  //                     suma montos y conserva la fecha de la Asignación.
+  //   * Reasignación -> titular activo actual: se trata como Asignación.
+  const idCol = (asigRows.length ? CFG.idCands.find(c=>c in asigRows[0]) : null);
+  const movOf = r => String(r[CFG.movCol]||"").trim();
   const grupos = new Map();
+  let nRetiradas=0;
   for(const r of asigRows){
-    const key=normEmail(r["Correo electrónico"]);
-    if(!key) continue;
+    const lid = idCol ? r[idCol] : normEmail(r["Correo electrónico"]);
+    if(lid==null || String(lid).trim()==="") continue;      // filas vacías
+    if(movOf(r)===CFG.movRetirada){ nRetiradas++; continue; } // excluir retiradas
+    if(!idCol && !normEmail(r["Correo electrónico"])) continue;
+    const key=String(lid).trim();
     (grupos.get(key) || grupos.set(key,[]).get(key)).push(r);
   }
   const consol=[];
-  let nConsol=0;
+  let nConsol=0, nReasig=0;
   for(const [key,g] of grupos){
-    let base;
-    if(g.length===1){
-      base={...g[0]};
-    }else{
-      nConsol++;
-      // Campos vigentes (Centro de costos, CeCo Team, User Team, Licencia,
-      // Uso, Fecha y Costo anual) -> del ÚLTIMO registro. Montos -> SUMA.
-      base={...g[g.length-1]};
-      for(const c of CFG.colsSuma) base[c]=g.reduce((s,x)=>s+num(x[c]),0);
-      base["Cantidad lic"]=g.reduce((s,x)=>s+num(x["Cantidad lic"]),0);
-      const lics=g.map(x=>String(x["Licencia"])).join(" -> ");
-      const nota=`Consolidado de ${g.length} registros. Campos vigentes del último registro (Licencia: ${base["Licencia"]}). Montos sumados. Historial: ${lics}.`;
+    const movs=g.map(movOf);
+    // Registro base (titular vigente): prioridad Reasignación > Update > Asignación.
+    const ord=[...g].sort((x,y)=>(CFG.movPrio[movOf(x)]||0)-(CFG.movPrio[movOf(y)]||0));
+    const base={...ord[ord.length-1]};
+    // Montos: suma de todos los registros del grupo (Asignación + Update, etc.).
+    for(const c of CFG.colsSuma) base[c]=g.reduce((s,x)=>s+num(x[c]),0);
+    base["Cantidad lic"]=g.reduce((s,x)=>s+num(x["Cantidad lic"]),0);
+    // Fecha de asignación: de la Asignación (o Reasignación si no hay Asignación).
+    const pickFecha=arr=>{ let best=null; for(const x of arr){ const d=toDate(x["Fecha"]); if(d&&(!best||d<best)) best=d; } return best; };
+    const asg=g.filter(x=>movOf(x)==="Asignación"), rea=g.filter(x=>movOf(x)==="Reasignación");
+    base["Fecha"]=pickFecha(asg.length?asg:(rea.length?rea:g));
+    base.__key=normEmail(base["Correo electrónico"]);
+    base.__lid=key;
+    for(const c of CFG.colsCostos) base[c]=num(base[c]);
+    if(g.length>1) nConsol++;
+    if(movs.includes("Reasignación")) nReasig++;
+    if(g.length>1 || movs.some(m=>m && m!=="Asignación")){
+      const nota=`Licencia ${key} [${movs.join(" + ")}]. Titular activo: ${base["Nombre"]}. `
+        +`Montos sumados; fecha de asignación de la Asignación original.`;
       const prev=base["Consideraciones"];
       base["Consideraciones"]=(prev && String(prev).trim())? `${prev} | ${nota}` : nota;
     }
-    base.__key=key;
-    base["Fecha"]=toDate(base["Fecha"]);
-    for(const c of CFG.colsCostos) base[c]=num(base[c]);
     consol.push(base);
   }
 
   /* Usuarios sin licencia vigente (Cantidad lic = 0): se excluyen de las
-     vistas de USABILIDAD, pero su costo sí cuenta en el total del proyecto
-     (indicadores de costo), por lo que se conserva el master completo. */
+     vistas de USABILIDAD. */
   const nSinLic = consol.filter(r=>num(r["Cantidad lic"])<=0).length;
 
   /* --- Índice de usabilidad + fecha de corte --- */
@@ -512,8 +527,13 @@ function procesar(asigRows, usabRows){
 
   /* --- Left join + cálculos --- */
   const filas=[];
+  let nDescartados=0;
   for(const a of consol){
-    const u=usabIdx.get(a.__key) || null;
+    let u=usabIdx.get(a.__key) || null;
+    // Descartar el registro de usabilidad si la última conexión es ANTERIOR a
+    // la fecha de asignación (incongruente: licencia retirada y reasignada; la
+    // actividad corresponde a un titular previo, no al usuario activo).
+    if(u && u.__la && a["Fecha"] && u.__la < a["Fecha"]){ u=null; nDescartados++; }
     const row={...a};
     // métricas
     for(const c of CFG.metricasNum) row[c]= u? num(u[c]) : 0;
@@ -555,12 +575,15 @@ function procesar(asigRows, usabRows){
     filas.push(row);
   }
 
-  // Master COMPLETO (86) y VIGENTE (85, Cantidad lic > 0 para usabilidad).
+  // Master COMPLETO y VIGENTE (Cantidad lic > 0 para usabilidad).
   const rowsFull=filas;
   const rows=filas.filter(r=>num(r["Cantidad lic"])>0);
   const consolVig=consol.filter(r=>num(r["Cantidad lic"])>0);
-  return {rows, rowsFull, consol:consolVig, corte, nConsol, nSinLic,
-          asigRaw:asigRows, usaFechaAsig,
+  // Crudo para montos (contabilidad): excluye "Lic. Retirada" y filas vacías.
+  const asigRaw=asigRows.filter(r=>movOf(r)!==CFG.movRetirada
+    && r["User Team"]!=null && String(r["User Team"]).trim()!=="");
+  return {rows, rowsFull, consol:consolVig, corte, nConsol, nSinLic, nRetiradas, nReasig,
+          nDescartados, asigRaw, usaFechaAsig,
           conUso:rows.filter(f=>f.__tieneUso).length};
 }
 
@@ -849,7 +872,7 @@ function renderKPIs(P){
   const cn=aggCostoNivel(P.rowsFull);
   const ocioso=cn.aprov.find(c=>c.clasif==="Ocioso") || {mxn:0,pct:0,users:0};
   const items=[
-    {l:"Usuarios (consolidados)", v:fmtInt(P.rows.length), f:`${P.nConsol} upgrade(s) consolidado(s)`, c:"--brand"},
+    {l:"Licencias activas", v:fmtInt(P.rows.length), f:`${P.nReasig} reasignada(s) · ${P.nRetiradas} retirada(s) excluida(s)`, c:"--brand"},
     {l:"Licencias asignadas", v:fmtInt(totalLic), f:`${P.conUso} con datos de uso · ${sinUso} sin uso`, c:"--series-1"},
     {l:"Facturado total", v:fmtMXN(totalMXN), f:"MXN contable (todos los registros)", c:"--brand-2"},
     {l:"Monto ocioso", v:fmtMXN(ocioso.mxn), f:`${fmtNum(ocioso.pct)}% del facturado · nivel Bajo/Nulo`, c:"--lvl-5"},
@@ -865,7 +888,8 @@ function renderKPIs(P){
     </div>`).join("");
   $("#kpiSub").textContent=`corte ${fmtDate(P.corte)}`
     + ` · fecha de asignación: ${P.usaFechaAsig?"Fecha Asig":"Fecha"}`
-    + (P.nSinLic? ` · ${P.nSinLic} registro(s) sin licencia vigente excluido(s)` : "");
+    + (P.nDescartados? ` · ${P.nDescartados} usabilidad(es) descartada(s) (conexión previa a la asignación)` : "")
+    + (P.nSinLic? ` · ${P.nSinLic} sin licencia vigente` : "");
 }
 
 function renderTeams(teams){
@@ -1267,88 +1291,6 @@ function manejarArchivo(file){
   reader.readAsArrayBuffer(file);
 }
 
-/* ---------- Lectura desde Google Drive (Google Sheets vía gviz) ---------- */
-function gvizUrl(sheet){
-  return `https://docs.google.com/spreadsheets/d/${CFG.gsheetId}/gviz/tq`
-    + `?tqx=out:json&headers=1&sheet=${encodeURIComponent(sheet)}`;
-}
-// Convierte la respuesta gviz (JSONP) en un arreglo de objetos {columna: valor}.
-function parseGviz(text, sheet){
-  const s=text.indexOf("{"), e=text.lastIndexOf("}");
-  if(s<0||e<0) throw new Error(`Respuesta inesperada de Google para «${sheet}».`);
-  const j=JSON.parse(text.slice(s,e+1));
-  if(j.status==="error"){
-    const msg=(j.errors||[]).map(x=>x.detailed_message||x.message).join("; ");
-    throw new Error(`Google no pudo leer «${sheet}»: ${msg||"acceso denegado"}.`);
-  }
-  const cols=(j.table.cols||[]).map(c=>String(c.label||"").trim());
-  const dateRe=/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)$/;
-  return (j.table.rows||[]).map(r=>{
-    const o={};
-    (r.c||[]).forEach((cell,i)=>{
-      const key=cols[i]; if(!key) return;
-      let v = cell ? cell.v : null;
-      if(typeof v==="string"){
-        const m=v.match(dateRe);
-        if(m) v=new Date(+m[1],+m[2],+m[3],+(m[4]||0),+(m[5]||0),+(m[6]||0));
-      }
-      o[key]=v;
-    });
-    return o;
-  }).filter(o=>Object.values(o).some(v=>v!=null && v!==""));
-}
-async function fetchHoja(sheet){
-  let res;
-  try{ res=await fetch(gvizUrl(sheet),{credentials:"omit",redirect:"follow"}); }
-  catch(err){
-    // TypeError = bloqueo por CORS o redirección a login (hoja no pública) o sin red.
-    const e=new Error(`El navegador bloqueó la lectura de «${sheet}» (CORS/red).`);
-    e.tipo="cors"; throw e;
-  }
-  if(!res.ok){ const e=new Error(`Google respondió HTTP ${res.status} al leer «${sheet}».`);
-    e.tipo="http"; throw e; }
-  const txt=await res.text();
-  // Si Google devuelve HTML (pantalla de acceso/login) en vez del JSON gviz.
-  if(!txt.includes("setResponse")){
-    const e=new Error(`«${sheet}» no devolvió datos (¿la hoja no es pública o el nombre de la pestaña no coincide?).`);
-    e.tipo="acceso"; throw e;
-  }
-  return parseGviz(txt, sheet);
-}
-async function actualizarDesdeGoogle(){
-  $("#errBox").innerHTML="";
-  const btns=[...document.querySelectorAll("#updateBtn,#updateBtnBig")];
-  const orig=btns.map(b=>b.textContent);
-  btns.forEach(b=>{ b.disabled=true; b.textContent="⟳ Actualizando…"; });
-  try{
-    const [asig, usab]=await Promise.all([fetchHoja(CFG.hojaAsig), fetchHoja(CFG.hojaUsab)]);
-    if(!asig.length) throw new Error("La pestaña «Asignación» está vacía.");
-    if(!asig[0].hasOwnProperty("Correo electrónico")) throw new Error("«Asignación» no tiene la columna «Correo electrónico».");
-    if(!usab.length || !usab[0].hasOwnProperty("Email")) throw new Error("«Usabilidad» no tiene la columna «Email».");
-    const P=procesar(asig, usab);
-    renderAll(P);
-    guardarLocal(asig, usab);
-  }catch(err){
-    const testUrl=gvizUrl(CFG.hojaAsig);
-    const esAcceso = err.tipo==="cors" || err.tipo==="acceso" || err.tipo==="http";
-    let ayuda="";
-    if(esAcceso){
-      ayuda=`<div style="margin-top:10px">Para que el navegador pueda leerlo, el archivo debe ser <b>público</b>. En un Workspace corporativo suele fallar porque el uso compartido queda restringido a la organización. Haz una de estas dos:
-        <ol style="margin:8px 0 0 18px; padding:0">
-          <li><b>Compartir como público:</b> en Google Sheets → <b>Compartir</b> → <i>Acceso general</i> → <b>«Cualquiera con el enlace»</b> (no «kio.tech con el enlace») → rol <b>Lector</b>.</li>
-          <li><b>O publicar en la web:</b> menú <b>Archivo → Compartir → Publicar en la web</b> → <i>Documento completo</i> → <b>Publicar</b>.</li>
-        </ol>
-        <div style="margin-top:8px">Prueba de acceso: abre <a href="${testUrl}" target="_blank" rel="noopener">este enlace</a> en una pestaña nueva. Si ves texto/JSON, ya es público; si te pide iniciar sesión, aún no lo es.</div></div>`;
-    }
-    $("#errBox").innerHTML=`<div class="err"><b>No se pudieron actualizar los datos desde Google Drive.</b><br>`
-      +`${err.message}${ayuda}`
-      +`<div class="muted" style="margin-top:8px">Mientras tanto, puedes usar el botón <b>«Archivo»</b> (arriba) para cargar el .xlsx.</div></div>`;
-    console.error(err);
-  }finally{
-    btns.forEach((b,i)=>{ b.disabled=false; b.textContent=orig[i]; });
-  }
-}
-
 /* ---------- Exportación a Excel del resultado procesado ---------- */
 function exportar(){
   if(!STATE) return;
@@ -1426,8 +1368,6 @@ function exportar(){
 /* ---------- Wiring de eventos ---------- */
 $("#fileInput").addEventListener("change",e=>{ if(e.target.files[0]) manejarArchivo(e.target.files[0]); e.target.value=""; });
 $("#exportBtn").addEventListener("click", exportar);
-$("#updateBtn").addEventListener("click", actualizarDesdeGoogle);
-$("#updateBtnBig") && $("#updateBtnBig").addEventListener("click", actualizarDesdeGoogle);
 $("#bajaSearch").addEventListener("input", drawUsab);
 ["detSearch","detNivel","detTeam","detAccion"].forEach(id=>$("#"+id).addEventListener("input", drawDet));
 
