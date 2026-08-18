@@ -231,19 +231,27 @@ def cruzar(consol: pd.DataFrame, usab: pd.DataFrame):
     # Evita colisión de nombres: la usabilidad trae su propio "Name".
     df = consol.merge(u, on="email_key", how="left", suffixes=("", "_usab"))
 
-    # Descarta el registro de usabilidad si la última conexión es ANTERIOR a la
-    # fecha de asignación (incongruente: actividad de un titular previo, no del
-    # usuario activo tras una reasignación).
-    incong = (df["Last Active"].notna() & df["Fecha"].notna()
-              & (df["Last Active"] < df["Fecha"]))
+    # La usabilidad SOLO es válida si hay última conexión (Last Active) y es
+    # posterior o igual a la fecha de asignación. Se descarta el registro de
+    # uso (aunque tenga Days Active u otras métricas) cuando, existiendo cruce
+    # con usabilidad:
+    #   - no hay Last Active, o
+    #   - Last Active es anterior a la fecha de asignación (actividad de un
+    #     titular previo tras retiro/reasignación).
+    usab_keys = set(u["email_key"])
+    matched = df["email_key"].isin(usab_keys)
+    incong = matched & (
+        df["Last Active"].isna()
+        | (df["Fecha"].notna() & (df["Last Active"] < df["Fecha"]))
+    )
     n_descartados = int(incong.sum())
     if n_descartados:
         cols_usab = [c for c in u.columns if c != "email_key"]
         for c in cols_usab:
             if c in df.columns:
                 df.loc[incong, c] = np.nan
-        print(f"    - Usabilidad descartada (última conexión < fecha de "
-              f"asignación): {n_descartados}")
+        print(f"    - Usabilidad descartada (sin última conexión o anterior a "
+              f"la fecha de asignación): {n_descartados}")
 
     con_uso = df["Days Active"].notna().sum()
     print(f"    - Usuarios de asignación con datos de uso: {con_uso}/{len(df)}")

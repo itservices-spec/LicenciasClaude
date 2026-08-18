@@ -530,10 +530,15 @@ function procesar(asigRows, usabRows){
   let nDescartados=0;
   for(const a of consol){
     let u=usabIdx.get(a.__key) || null;
-    // Descartar el registro de usabilidad si la última conexión es ANTERIOR a
-    // la fecha de asignación (incongruente: licencia retirada y reasignada; la
-    // actividad corresponde a un titular previo, no al usuario activo).
-    if(u && u.__la && a["Fecha"] && u.__la < a["Fecha"]){ u=null; nDescartados++; }
+    // La usabilidad SOLO es válida si hay última conexión (Last Active) y es
+    // POSTERIOR O IGUAL a la fecha de asignación. Se descarta el uso cuando:
+    //   - no hay Last Active (aunque haya Days Active u otras métricas), o
+    //   - Last Active es anterior a la fecha de asignación
+    //     (actividad de un titular previo tras retiro/reasignación).
+    if(u){
+      const la=u.__la, fa=a["Fecha"];
+      if(!la || (fa && la < fa)){ u=null; nDescartados++; }
+    }
     const row={...a};
     // métricas
     for(const c of CFG.metricasNum) row[c]= u? num(u[c]) : 0;
@@ -888,7 +893,7 @@ function renderKPIs(P){
     </div>`).join("");
   $("#kpiSub").textContent=`corte ${fmtDate(P.corte)}`
     + ` · fecha de asignación: ${P.usaFechaAsig?"Fecha Asig":"Fecha"}`
-    + (P.nDescartados? ` · ${P.nDescartados} usabilidad(es) descartada(s) (conexión previa a la asignación)` : "")
+    + (P.nDescartados? ` · ${P.nDescartados} usabilidad(es) descartada(s) (sin conexión o previa a la asignación)` : "")
     + (P.nSinLic? ` · ${P.nSinLic} sin licencia vigente` : "");
 }
 
